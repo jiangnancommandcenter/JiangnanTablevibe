@@ -536,8 +536,13 @@
         sent: `Your ${voucherConfig.discountPercent}% voucher has been sent to ${email}. Show that email to staff on your next visit. Check your spam folder if you don't see it.`,
         duplicate: `${email} has already received a voucher (one per email). Please check your inbox for the earlier email.`,
         failed: `Your voucher is saved, but the email didn't send. Show this screen to staff on your next visit. They can find it by your email: ${email}.`,
-        closed: `Your review has been sent to Jiang Nan Hotpot management.`
+        closed: `Your review has been sent to Jiang Nan Hotpot management.`,
+        skipped: `Your review has been sent to Jiang Nan Hotpot management.`
       }[c.stage];
+      const voucherBox = afterEmail ? "" : renderVoucherCard();
+      // The Google invitation comes after the voucher step: sent / already had one / failed /
+      // skipped / vouchers off — i.e. whenever there's no voucher box (or "sending") on screen.
+      const googleCard = c.stage !== "sending" && !voucherBox ? renderGoogleReviewCard() : "";
       return `
         <div class="flex-1 flex flex-col items-center justify-center text-center py-6">
           <div class="w-16 h-16 rounded-full bg-tvRed text-white flex items-center justify-center shadow-sm">
@@ -547,7 +552,30 @@
           ${afterEmail
             ? `<p class="text-[14px] text-gray-600 mt-3 max-w-sm leading-relaxed">${afterEmail}</p>`
             : `<p class="text-[13px] text-gray-500 mt-1.5">Your review has been sent to Jiang Nan Hotpot management.</p>
-               ${renderVoucherCard()}`}
+               ${voucherBox}`}
+          ${googleCard}
+        </div>`;
+    }
+
+    // Optional invitation to also post on the branch's Google listing. Shown to everyone,
+    // whatever their rating (Google's policy forbids only inviting happy customers).
+    // The link is set per branch in the dashboard: Branches → Edit → Google review link.
+    function branchGoogleReviewUrl(branchId) {
+      const b = branches.find(x => x.id === branchId);
+      const url = b && typeof b.googleReviewUrl === "string" ? b.googleReviewUrl.trim() : "";
+      return /^https:\/\/\S+$/.test(url) ? url : "";
+    }
+
+    function renderGoogleReviewCard() {
+      const url = branchGoogleReviewUrl(lastSummary && lastSummary.branchId);
+      if (!url) return "";
+      return `
+        <div class="w-full max-w-sm mt-5 text-center border border-gray-200 rounded-[10px] p-4 bg-white shadow-sm">
+          <p class="text-[14px] text-gray-800 leading-relaxed">Do us a favor and share your experience on Google too? It only takes 2 seconds.</p>
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="mt-3 inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-[6px] border border-gray-300 bg-white hover:bg-gray-50 text-gray-900 font-semibold text-[13.5px] transition-colors">
+            <svg class="w-[18px] h-[18px] shrink-0" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+            Leave a Google Review
+          </a>
         </div>`;
     }
 
@@ -564,7 +592,8 @@
                  <button type="button" data-action="send-voucher" class="px-4 py-2.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white font-semibold text-[13px] transition-colors shadow-sm shrink-0">Send my voucher</button>
                </div>
                ${c.error ? `<p data-voucher-error class="text-[12px] font-medium text-tvRed mt-2">${escapeHtml(c.error)}</p>` : ""}
-               <p class="text-[11.5px] text-gray-500 mt-2.5">Your review is already saved. The voucher is optional.</p>`
+               <p class="text-[11.5px] text-gray-500 mt-2.5">Your review is already saved. The voucher is optional.
+                 <button type="button" data-action="skip-voucher" class="underline hover:text-gray-800 ml-0.5">No thanks, skip the voucher</button></p>`
       }[c.stage];
       if (!body) return "";
       return `
@@ -656,6 +685,8 @@
           discount: cfg.discountPercent + "%",
           applies_to: cfg.appliesTo,
           min_spend_line: minSpendLine(cfg.minSpend, cfg.appliesTo),
+          // Set per branch in the dashboard: Branches → Edit → Google review link
+          google_review_url: branchGoogleReviewUrl(branchId),
           valid_from: validFrom,
           valid_until: validUntil,
           expires: validUntil, // kept for older templates
@@ -713,6 +744,11 @@
       if (a === "submit") return submitFinalSurvey();
       if (a === "restart") return resetSurvey();
       if (a === "send-voucher") return sendVoucherFromCard();
+      if (a === "skip-voucher") {
+        voucherCard = { stage: "skipped", email: "" };
+        saveDoneState();
+        return render();
+      }
       if (a === "voucher-change-email") {
         voucherEmailInput = "";
         voucherCard = { stage: "form", email: "", error: "" };
@@ -825,7 +861,7 @@
         skipBranchStep = false;
         if (!finished) currentKey = "branch";
       }
-      if (!finished) render();
+      render(); // also on the thank-you screen: the Google review button needs the branch's link
     };
 
     // Called by js/employees.js when staff change

@@ -664,6 +664,11 @@
           <label for="branchManagerInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Branch Manager</label>
           <input type="text" id="branchManagerInput" maxlength="100" placeholder="e.g. Maria Santos" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
         </div>
+        <div>
+          <label for="branchGoogleReviewInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Google review link <span class="normal-case font-normal text-gray-400">(optional)</span></label>
+          <input type="url" id="branchGoogleReviewInput" maxlength="500" placeholder="https://g.page/r/…/review" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+          <p class="text-[11px] text-gray-500 mt-1">Google Business Profile → Ask for reviews → copy the link. After the survey, customers get a "Leave a Google Review" button for this branch. Leave empty to hide it.</p>
+        </div>
         <div class="flex items-center justify-end gap-2.5 pt-2">
           <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
           <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Save Branch</button>
@@ -1021,6 +1026,9 @@
                 ${stats.count.toLocaleString()} review${stats.count === 1 ? "" : "s"} ·
                 ${staffCount} staff · <span class="text-gray-400">ID: ${escapeHtml(b.id)}</span>
               </p>
+              <p class="text-[11.5px] mt-1 ${b.googleReviewUrl ? "text-gray-500" : "text-tvRed"}">${b.googleReviewUrl
+                ? `Google review link ✓ <a href="${escapeHtml(b.googleReviewUrl)}" target="_blank" rel="noopener" class="underline hover:text-gray-900">test</a>`
+                : "No Google review link yet: click Edit to add one"}</p>
             </div>
             <div class="flex items-center gap-2 shrink-0 flex-wrap">
               ${inactive ? "" : `<button type="button" data-action="qr" data-id="${escapeHtml(b.id)}" class="px-3 py-1.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold transition-colors">QR Code</button>`}
@@ -1049,6 +1057,7 @@
       document.getElementById("branchRegionInput").value = b ? b.region || "" : "";
       document.getElementById("branchAddressInput").value = b ? b.address || "" : "";
       document.getElementById("branchManagerInput").value = b ? b.manager || "" : "";
+      document.getElementById("branchGoogleReviewInput").value = b ? b.googleReviewUrl || "" : "";
       openModal("branchModalBackdrop");
     }
 
@@ -1060,10 +1069,15 @@
         region: document.getElementById("branchRegionInput").value.trim(),
         address: document.getElementById("branchAddressInput").value.trim(),
         manager: document.getElementById("branchManagerInput").value.trim(),
+        googleReviewUrl: document.getElementById("branchGoogleReviewInput").value.trim(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       };
       if (!data.name) {
         showToast("Please enter a branch name.");
+        return;
+      }
+      if (data.googleReviewUrl && !/^https:\/\/\S+$/.test(data.googleReviewUrl)) {
+        showToast("The Google review link must start with https:// (copy it from Google Business Profile).");
         return;
       }
       try {

@@ -37,11 +37,14 @@ service cloud.firestore {
     }
 
     function validBranch(d) {
-      return d.keys().hasOnly(['name', 'region', 'address', 'manager', 'status', 'createdAt', 'updatedAt'])
+      return d.keys().hasOnly(['name', 'region', 'address', 'manager', 'googleReviewUrl', 'status', 'createdAt', 'updatedAt'])
         && d.name is string && d.name.size() > 0 && d.name.size() <= 100
         && optionalString(d, 'region', 100)
         && optionalString(d, 'address', 200)
         && optionalString(d, 'manager', 100)
+        // Google review link shown on the public survey: empty, or an https:// link
+        && optionalString(d, 'googleReviewUrl', 500)
+        && (!('googleReviewUrl' in d) || d.googleReviewUrl == '' || d.googleReviewUrl.matches('^https://[^ ]+$'))
         && d.status in ['active', 'inactive'];
     }
 
