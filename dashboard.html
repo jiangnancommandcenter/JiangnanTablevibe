@@ -55,6 +55,9 @@
       function show() {
         var o = document.getElementById("loginOverlay"), el = document.getElementById("loginError");
         if (!o || !el || o.classList.contains("hidden")) return;
+        var f = document.getElementById("loginForm"), l = document.getElementById("authLoading");
+        if (f) f.classList.remove("hidden");   // so the error message is visible
+        if (l) l.classList.add("hidden");
         el.textContent = "Page error: " + msg + " — press Ctrl+F5 to reload the page.";
         el.classList.remove("hidden");
       }
@@ -81,8 +84,13 @@
         <img src="images/jiangnan-logo.png" alt="Jiang Nan Hotpot" class="h-[48px] w-[48px] object-contain">
         <span class="font-bold text-[18px] tracking-[0.02em] text-gray-900">Jiang Nan Hotpot</span>
       </div>
+      <!-- Shown on page load while Firebase restores the saved sign-in; the form only appears if nobody is signed in -->
+      <div id="authLoading" class="flex flex-col items-center gap-3 py-8 text-[13px] text-gray-500">
+        <span class="w-6 h-6 rounded-full border-2 border-gray-300 border-t-tvRed animate-spin" aria-hidden="true"></span>
+        Checking your sign-in…
+      </div>
       <!-- action/onsubmit stop the browser from ever reloading the page on Sign in, even if a script failed -->
-      <form id="loginForm" action="javascript:void(0)" onsubmit="return false" class="bg-white border border-gray-200 rounded-[10px] p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] space-y-4">
+      <form id="loginForm" action="javascript:void(0)" onsubmit="return false" class="hidden bg-white border border-gray-200 rounded-[10px] p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] space-y-4">
         <div>
           <h1 class="text-lg font-bold text-gray-900">Administrator sign in</h1>
           <p class="text-[13px] text-gray-500 mt-1">Sign in to view reviews and manage your branches.</p>
@@ -143,16 +151,6 @@
         <span class="font-bold text-[16px] tracking-[0.02em] text-gray-900 group-hover:text-tvRed transition-colors">Jiang Nan Hotpot</span>
       </a>
     </div>
-
-    <div class="flex items-center gap-4">
-      <div class="hidden sm:block text-right">
-        <div class="text-[12.5px] font-medium tracking-[0.05em] text-gray-700">ADMINISTRATOR</div>
-        <div id="userEmailLabel" class="text-[11px] text-gray-500"></div>
-      </div>
-      <button id="signOutBtn" type="button" class="text-[12px] font-semibold text-gray-600 hover:text-gray-900 border border-gray-300 hover:border-gray-400 rounded-[6px] px-3 py-1.5 transition-colors">
-        Sign out
-      </button>
-    </div>
   </header>
 
   <!-- Main App Body -->
@@ -160,7 +158,7 @@
     <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-20 hidden md:hidden"></div>
 
     <!-- Left Dark Sidebar -->
-    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 top-[58px] md:top-0 w-[215px] bg-tvDark text-gray-400 flex flex-col justify-between py-5 z-20 transform -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out shrink-0">
+    <aside id="sidebar" class="fixed md:sticky inset-y-0 left-0 top-[58px] md:h-[calc(100vh-58px)] md:self-start overflow-y-auto w-[215px] bg-tvDark text-gray-400 flex flex-col justify-between py-5 z-20 transform -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out shrink-0">
       <div class="flex flex-col">
         <div>
           <div class="text-[10.5px] font-bold tracking-[0.06em] text-neutral-500 px-5 pb-2.5 uppercase">Workspace</div>
@@ -221,6 +219,18 @@
             </li>
           </ul>
         </div>
+      </div>
+
+      <!-- Signed-in account (bottom of the sidebar) -->
+      <div class="mt-8 mx-3 pt-4 border-t border-neutral-800">
+        <div class="px-2">
+          <div class="text-[10.5px] font-bold tracking-[0.06em] text-neutral-500 uppercase">Administrator</div>
+          <div id="userEmailLabel" class="text-[12px] text-gray-300 mt-0.5 truncate"></div>
+        </div>
+        <button id="signOutBtn" type="button" class="mt-3 w-full flex items-center gap-2.5 px-2 py-2 rounded-[6px] text-[13px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+          Sign out
+        </button>
       </div>
     </aside>
 
@@ -335,6 +345,11 @@
             <option value="Neutral">Neutral</option>
             <option value="Needs Attention">Needs Attention</option>
             <option value="Unrated">Unrated</option>
+          </select>
+          <select id="resolvedFilterSelect" aria-label="Resolved status" class="bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-[8px] px-3 py-2 focus:outline-none focus:border-tvRed cursor-pointer">
+            <option value="All">All (Resolved &amp; Unresolved)</option>
+            <option value="Resolved">Resolved</option>
+            <option value="Unresolved">Unresolved</option>
           </select>
           <select id="staffFilterSelect" class="bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-[8px] px-3 py-2 focus:outline-none focus:border-tvRed cursor-pointer">
             <option value="All">All Staff</option>
@@ -534,24 +549,25 @@
     </div>
   </div>
 
-  <!-- Reply Modal -->
-  <div id="replyModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="replyModalHeading">
+  <!-- Resolve Modal: staff mark that action was taken on a review (internal, the customer isn't notified) -->
+  <div id="resolveModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="resolveModalHeading">
     <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl">
       <div class="flex items-center justify-between mb-2">
-        <h3 id="replyModalHeading" class="text-lg font-bold text-gray-900">Reply to Customer</h3>
+        <h3 id="resolveModalHeading" class="text-lg font-bold text-gray-900">Mark as Resolved</h3>
         <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </div>
-      <p id="replyTargetCustomer" class="text-[13px] text-gray-500 mb-4"></p>
-      <form id="replyForm" class="space-y-4">
+      <p id="resolveTargetCustomer" class="text-[13px] text-gray-500 mb-4"></p>
+      <form id="resolveForm" class="space-y-4">
         <div>
-          <label for="replyMessageInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Management Response</label>
-          <textarea id="replyMessageInput" rows="4" required maxlength="1000" placeholder="Write a professional response..." class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></textarea>
+          <label for="resolveNoteInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Action taken <span class="normal-case font-normal text-gray-400">(optional)</span></label>
+          <textarea id="resolveNoteInput" rows="4" maxlength="1000" placeholder="e.g. Talked to the kitchen team about soup temperature" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></textarea>
+          <p class="text-[11px] text-gray-500 mt-1">For your team only. The customer is not notified.</p>
         </div>
         <div class="flex items-center justify-end gap-2.5 pt-2">
           <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
-          <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Send Reply</button>
+          <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Mark as Resolved</button>
         </div>
       </form>
     </div>
@@ -751,25 +767,26 @@
     let currentSearch = "";
     let selectedStarFilter = "All";
     let selectedSentimentFilter = "All";
-    let targetReplyReviewId = null;
+    let selectedResolvedFilter = "All"; // All | Resolved | Unresolved
+    let targetResolveReviewId = null;
 
     const views = {
       dashboard: {
         title: "Dashboard",
         subtitle: "Ratings, sentiment and performance across your restaurant locations",
-        action: "+ Add Review", onAction: () => openModal("reviewModalBackdrop"),
+        action: null, // reviews come only from customers (no manual "+ Add Review")
         filters: true, search: false
       },
       vouchers: {
         title: "Vouchers",
-        subtitle: "5% thank-you vouchers — look up a code and redeem it once",
+        subtitle:  "thank you vouchers",
         action: "Redeem a Voucher", onAction: () => document.getElementById("voucherCodeInput").focus(),
         filters: false, search: false
       },
       reviews: {
         title: "Reviews",
-        subtitle: "Customer feedback — reply to guests or flag submissions",
-        action: "+ Add Review", onAction: () => openModal("reviewModalBackdrop"),
+        subtitle: "Customer feedback — resolve suggestions or flag submissions",
+        action: null, // reviews come only from customers (no manual "+ Add Review")
         filters: true, search: true
       },
       branches: {
@@ -849,6 +866,10 @@
     function switchView(viewName) {
       const cfg = views[viewName] || views.dashboard;
       currentView = views[viewName] ? viewName : "dashboard";
+      // Keep the page in the address (#reviews, #vouchers…) so a refresh stays on it
+      try {
+        if (location.hash.slice(1) !== currentView) history.replaceState(null, "", "#" + currentView);
+      } catch {}
 
       Object.keys(views).forEach(v => {
         document.getElementById(v + "View").classList.toggle("hidden", v !== currentView);
@@ -864,7 +885,8 @@
 
       document.getElementById("pageTitle").textContent = cfg.title;
       document.getElementById("pageSubtitle").textContent = cfg.subtitle;
-      document.getElementById("primaryActionLabel").textContent = cfg.action;
+      document.getElementById("primaryActionLabel").textContent = cfg.action || "";
+      document.getElementById("primaryActionBtn").classList.toggle("hidden", !cfg.action);
       document.getElementById("filterToolbar").classList.toggle("hidden", !cfg.filters);
       document.getElementById("activeBranchBadge").classList.toggle("hidden", !cfg.filters);
       document.getElementById("searchWrap").classList.toggle("hidden", !cfg.search);
@@ -890,7 +912,7 @@
       e.preventDefault();
       switchView("dashboard");
     });
-    document.getElementById("primaryActionBtn").addEventListener("click", () => views[currentView].onAction());
+    document.getElementById("primaryActionBtn").addEventListener("click", () => { const v = views[currentView]; if (v.onAction) v.onAction(); });
 
     // Mobile sidebar drawer
     const sidebar = document.getElementById("sidebar");
@@ -1302,7 +1324,10 @@
             staffName: s.staffMember || "Unassigned",
             dish: s.dish || "",
             sentiment: sentimentFor(rating),
-            reply: s.reply || "",
+            reply: s.reply || "",            // older "Reply" notes, still shown
+            resolved: s.resolved === true,
+            resolutionNote: s.resolutionNote || "",
+            resolvedAt: s.resolvedAt && s.resolvedAt.toDate ? s.resolvedAt.toDate() : null,
             flagged: !!s.flagged
           };
         });
@@ -1325,6 +1350,10 @@
       }
       if (selectedSentimentFilter !== "All") {
         allReviews = allReviews.filter(r => r.sentiment === selectedSentimentFilter);
+      }
+      if (selectedResolvedFilter !== "All") {
+        const wantResolved = selectedResolvedFilter === "Resolved";
+        allReviews = allReviews.filter(r => r.resolved === wantResolved);
       }
       const q = currentSearch.toLowerCase().trim();
       if (q) {
@@ -1362,6 +1391,7 @@
                 <div class="flex items-center gap-2 flex-wrap">
                   <h3 class="text-[14px] font-bold text-gray-900 break-words">${escapeHtml(rev.user)}</h3>
                   <span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${badgeClass[rev.sentiment]}">${rev.sentiment}</span>
+                  ${rev.resolved ? '<span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Resolved</span>' : ""}
                   ${rev.flagged ? '<span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold border border-tvRed text-tvRed">Flagged</span>' : ""}
                 </div>
                 <p class="text-[12px] text-gray-500 mt-0.5">${escapeHtml(rev.date)} · ${escapeHtml(rev.branchName)} · Staff: ${escapeHtml(rev.staffName)}</p>
@@ -1382,17 +1412,26 @@
             ${fullResponseHtml(rev.raw)}
           </details>
 
+          ${rev.resolved ? `
+            <div class="mt-3 p-3 bg-emerald-50/60 rounded-[6px] border-l-2 border-emerald-500 text-[12.5px] text-gray-700 break-words">
+              <strong class="text-gray-900">Resolved${rev.resolvedAt ? " " + escapeHtml(rev.resolvedAt.toLocaleDateString()) : ""}${rev.resolutionNote ? ":" : ""}</strong>
+              ${rev.resolutionNote ? escapeHtml(rev.resolutionNote) : '<span class="text-gray-500">Action was taken on this feedback.</span>'}
+            </div>` : ""}
           ${rev.reply ? `
-            <div class="mt-3 p-3 bg-gray-50 rounded-[6px] border-l-2 border-tvRed text-[12.5px] text-gray-700 break-words">
-              <strong class="text-gray-900">Management response:</strong> ${escapeHtml(rev.reply)}
+            <div class="mt-3 p-3 bg-gray-50 rounded-[6px] border-l-2 border-gray-300 text-[12.5px] text-gray-700 break-words">
+              <strong class="text-gray-900">Earlier note:</strong> ${escapeHtml(rev.reply)}
             </div>` : ""}
 
           <div class="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-100">
             <span class="text-[12px] text-gray-500">${rev.dish ? `Specialty: <span class="font-medium text-gray-700">${escapeHtml(rev.dish)}</span>` : ""}</span>
             <div class="flex items-center gap-2">
-              <button type="button" data-action="reply" data-id="${escapeHtml(rev.id)}" class="px-3 py-1.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold transition-colors">
-                ${rev.reply ? "Edit Reply" : "Reply"}
-              </button>
+              ${rev.resolved ? `
+              <button type="button" data-action="reopen" data-id="${escapeHtml(rev.id)}" class="px-3 py-1.5 rounded-[6px] border border-gray-200 text-gray-600 hover:bg-gray-100 text-[12px] font-semibold transition-colors">
+                Reopen
+              </button>` : `
+              <button type="button" data-action="resolve" data-id="${escapeHtml(rev.id)}" class="px-3 py-1.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold transition-colors">
+                Resolve
+              </button>`}
               <button type="button" data-action="flag" data-id="${escapeHtml(rev.id)}" class="px-3 py-1.5 rounded-[6px] border text-[12px] font-semibold transition-colors ${rev.flagged ? "border-tvRed text-tvRed bg-white hover:bg-gray-50" : "border-gray-200 text-gray-600 hover:bg-gray-100"}">
                 ${rev.flagged ? "Unflag" : "Flag"}
               </button>
@@ -1413,7 +1452,8 @@
     document.getElementById("allReviewsFeed").addEventListener("click", e => {
       const btn = e.target.closest("[data-action]");
       if (!btn) return;
-      if (btn.dataset.action === "reply") openReplyModal(btn.dataset.id);
+      if (btn.dataset.action === "resolve") openResolveModal(btn.dataset.id);
+      if (btn.dataset.action === "reopen") reopenReview(btn.dataset.id);
       if (btn.dataset.action === "flag") toggleFlagReview(btn.dataset.id);
     });
 
@@ -1437,6 +1477,10 @@
       selectedSentimentFilter = e.target.value;
       renderReviewsFeed();
     });
+    document.getElementById("resolvedFilterSelect").addEventListener("change", e => {
+      selectedResolvedFilter = e.target.value;
+      renderReviewsFeed();
+    });
     document.getElementById("staffFilterSelect").addEventListener("change", e => setStaffFilter(e.target.value));
 
     function clearSearch() {
@@ -1457,6 +1501,8 @@
     document.getElementById("resetFiltersBtn").addEventListener("click", () => {
       document.getElementById("sentimentFilterSelect").value = "All";
       selectedSentimentFilter = "All";
+      document.getElementById("resolvedFilterSelect").value = "All";
+      selectedResolvedFilter = "All";
       selectedStaffFilter = "All";
       clearSearch();
       setStarFilter("All");
@@ -1487,32 +1533,50 @@
       }
     });
 
-    // ---------- Reply & flag (persisted on the survey document) ----------
-    function openReplyModal(reviewId) {
+    // ---------- Resolve & flag (persisted on the survey document) ----------
+    // "Resolve" marks that the team acted on the feedback. Internal only: the customer isn't notified.
+    function openResolveModal(reviewId) {
       const s = surveySubmissions.find(x => x.id === reviewId);
       if (!s) return;
-      targetReplyReviewId = reviewId;
-      document.getElementById("replyTargetCustomer").textContent = `Replying to ${s.customerName || "Anonymous"}`;
-      document.getElementById("replyMessageInput").value = s.reply || "";
-      openModal("replyModalBackdrop");
+      targetResolveReviewId = reviewId;
+      document.getElementById("resolveTargetCustomer").textContent = `Feedback from ${s.customerName || "Anonymous"}`;
+      document.getElementById("resolveNoteInput").value = s.resolutionNote || "";
+      openModal("resolveModalBackdrop");
     }
 
-    document.getElementById("replyForm").addEventListener("submit", async e => {
+    document.getElementById("resolveForm").addEventListener("submit", async e => {
       e.preventDefault();
-      const msg = document.getElementById("replyMessageInput").value.trim();
-      if (!msg || !targetReplyReviewId) return;
+      if (!targetResolveReviewId) return;
+      const note = document.getElementById("resolveNoteInput").value.trim();
       try {
-        await db.collection("surveys").doc(targetReplyReviewId).update({
-          reply: msg,
-          repliedAt: firebase.firestore.FieldValue.serverTimestamp()
+        await db.collection("surveys").doc(targetResolveReviewId).update({
+          resolved: true,
+          resolutionNote: note,
+          resolvedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          resolvedBy: firebase.auth().currentUser.uid
         });
-        closeModal(document.getElementById("replyModalBackdrop"));
-        showToast("Management response saved.");
+        closeModal(document.getElementById("resolveModalBackdrop"));
+        showToast("Marked as resolved.");
       } catch (err) {
-        console.error("Error saving reply:", err);
-        showToast("Failed to save reply. Please try again.");
+        console.error("Error resolving review:", err);
+        showToast(err.code === "permission-denied"
+          ? "Couldn't save: publish the latest Firestore rules first."
+          : "Failed to mark as resolved. Please try again.");
       }
     });
+
+    async function reopenReview(reviewId) {
+      const s = surveySubmissions.find(x => x.id === reviewId);
+      if (!s) return;
+      if (!confirm(`Reopen the feedback from ${s.customerName || "Anonymous"}? It will show as not resolved again.`)) return;
+      try {
+        await db.collection("surveys").doc(reviewId).update({ resolved: false });
+        showToast("Reopened.");
+      } catch (err) {
+        console.error("Error reopening review:", err);
+        showToast("Failed to reopen. Please try again.");
+      }
+    }
 
     async function toggleFlagReview(reviewId) {
       const s = surveySubmissions.find(x => x.id === reviewId);
@@ -1644,12 +1708,14 @@
     // Signed in is not enough: the account also needs an admins/{uid} document
     // (the Firestore rules enforce the same thing).
     function showLoginForm() {
+      document.getElementById("authLoading").classList.add("hidden");
       document.getElementById("loginOverlay").classList.remove("hidden");
       document.getElementById("loginForm").classList.remove("hidden");
       document.getElementById("notAdminPanel").classList.add("hidden");
     }
 
     function showNotAdmin(user, status) {
+      document.getElementById("authLoading").classList.add("hidden");
       document.getElementById("loginOverlay").classList.remove("hidden");
       document.getElementById("loginForm").classList.add("hidden");
       document.getElementById("notAdminPanel").classList.remove("hidden");
@@ -1681,7 +1747,12 @@
       }
     }
 
+    // Safety net: if Firebase never answers (offline, blocked), show the sign-in form anyway
+    let authResolved = false;
+    setTimeout(() => { if (!authResolved && !auth.currentUser) showLoginForm(); }, 8000);
+
     auth.onAuthStateChanged(user => {
+      authResolved = true;
       document.getElementById("userEmailLabel").textContent = user ? user.email : "";
       if (user) {
         handleSignedInUser(user);
@@ -1723,7 +1794,14 @@
     // ---------- Init ----------
     populateBranchSelects();
     setStarFilter("All");
-    switchView("dashboard");
+    function viewFromHash() {
+      try { return decodeURIComponent(location.hash.slice(1)); } catch { return ""; }
+    }
+    switchView(viewFromHash() || "dashboard"); // reopen the page that was open before the refresh
+    window.addEventListener("hashchange", () => {
+      const v = viewFromHash();
+      if (v && v !== currentView) switchView(v);
+    });
     updateKPIs();
   </script>
 </body>

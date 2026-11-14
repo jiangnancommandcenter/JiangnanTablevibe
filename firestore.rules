@@ -83,11 +83,16 @@ service cloud.firestore {
     match /surveys/{docId} {
       allow create: if validSubmission(request.resource.data);  // public: customers have no account
       allow read: if isAdmin();                                  // customer data is private
-      // Staff may only reply to or flag a submission; the customer's answers never change
+      // Staff may only resolve (with an internal note), flag, or keep an older reply note;
+      // the customer's answers never change
       allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reply', 'repliedAt', 'flagged'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reply', 'repliedAt', 'flagged',
+             'resolved', 'resolutionNote', 'resolvedAt', 'resolvedBy'])
         && optionalString(request.resource.data, 'reply', 1000)
-        && (!('flagged' in request.resource.data) || request.resource.data.flagged is bool);
+        && optionalString(request.resource.data, 'resolutionNote', 1000)
+        && (!('flagged' in request.resource.data) || request.resource.data.flagged is bool)
+        && (!('resolved' in request.resource.data) || request.resource.data.resolved is bool)
+        && (!('resolvedBy' in request.resource.data) || request.resource.data.resolvedBy is string);
       allow delete: if false;
     }
 
