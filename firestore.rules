@@ -88,8 +88,48 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Voucher offer settings (surveyConfig/voucher, edited on the dashboard's Vouchers page).
+    // Until an admin saves them, the defaults below apply (keep in sync with js/voucherConfig.js).
+    function voucherCfg() {
+      return exists(/databases/$(database)/documents/surveyConfig/voucher)
+        ? get(/databases/$(database)/documents/surveyConfig/voucher).data
+        : {'enabled': true, 'discountPercent': 15, 'appliesTo': 'Ala Carte Items', 'minSpend': 1000,
+           'validityValue': 1, 'validityUnit': 'months'};
+    }
+
+    function validVoucherConfig(d) {
+      return d.keys().hasOnly(['enabled', 'discountPercent', 'appliesTo', 'minSpend',
+                               'validityValue', 'validityUnit', 'updatedAt'])
+        && d.enabled is bool
+        && d.discountPercent is int && d.discountPercent >= 1 && d.discountPercent <= 100
+        && d.appliesTo is string && d.appliesTo.size() > 0 && d.appliesTo.size() <= 60
+        && d.minSpend is int && d.minSpend >= 0 && d.minSpend <= 1000000
+        && d.validityValue is int && d.validityValue >= 1 && d.validityValue <= 365
+        && d.validityUnit in ['days', 'weeks', 'months'];
+    }
+
+    // Longest allowed validity in days (a little slack for month lengths, time zones and the whole last day)
+    function voucherMaxDays(cfg) {
+      return cfg.validityUnit == 'months' ? cfg.validityValue * 32
+           : cfg.validityUnit == 'weeks' ? cfg.validityValue * 7 + 2
+           : cfg.validityValue + 2;
+    }
+
+    // A new voucher must carry exactly the current offer
+    function matchesVoucherOffer(d, cfg) {
+      return cfg.enabled == true
+        && d.discountPercent == cfg.discountPercent
+        && d.appliesTo == cfg.appliesTo
+        && d.minSpend == cfg.minSpend
+        && d.expiresAt is timestamp
+        && d.expiresAt > request.time
+        && d.expiresAt <= request.time + duration.value(voucherMaxDays(cfg), 'd');
+    }
+
     // ============================================
-    // VOUCHERS - 15% voucher emailed after the survey (no customer login)
+    // VOUCHERS - voucher emailed after the survey (no customer login)
+    // The deal (discount, applies to, min spend, expiry) is copied into each voucher from
+    // surveyConfig/voucher, so changing the settings never changes vouchers already sent.
     // Doc id = the customer's lowercased email. Rules only allow *creating* a new doc,
     // so a second voucher for the same email is a write to an existing doc → rejected.
     // Each voucher must point at a real survey submitted in the last 15 minutes.
@@ -98,12 +138,13 @@ service cloud.firestore {
     match /vouchers/{emailId} {
       allow read: if isAdmin();
       allow create: if request.resource.data.keys().hasOnly(['code', 'email', 'surveyId', 'branchId',
-                                                             'discountPercent', 'status', 'createdAt'])
+                                                             'discountPercent', 'appliesTo', 'minSpend',
+                                                             'expiresAt', 'status', 'createdAt'])
         && request.resource.data.email == emailId
         && emailId.size() <= 254
         && emailId.matches('^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,}$')   // lowercase, email-shaped
         && request.resource.data.code is string && request.resource.data.code.size() == 8
-        && request.resource.data.discountPercent == 15
+        && matchesVoucherOffer(request.resource.data, voucherCfg())
         && request.resource.data.status == 'active'
         && request.resource.data.createdAt == request.time
         && request.resource.data.branchId is string && request.resource.data.branchId.size() <= 50
@@ -111,11 +152,13 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId))
         && get(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId)).data.createdAt
              > request.time - duration.value(15, 'm');
-      // Staff redeem once, within 1 calendar month (the email shows the exact date; 32 days
-      // here covers the longest month + the whole last day); the customer can never change it
+      // Staff redeem once, before the voucher's expiry; the customer can never change it.
+      // Older vouchers have no expiresAt: they were valid for 1 calendar month (32 days covers it).
       allow update: if isAdmin()
         && resource.data.status == 'active'
-        && request.time < resource.data.createdAt + duration.value(32, 'd')
+        && (('expiresAt' in resource.data)
+              ? request.time <= resource.data.expiresAt
+              : request.time < resource.data.createdAt + duration.value(32, 'd'))
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'redeemedAt', 'redeemedBy', 'redeemedBranchId'])
         && request.resource.data.status == 'redeemed'
@@ -127,15 +170,18 @@ service cloud.firestore {
 
     // ============================================
     // SURVEY CONFIG - star-rating categories ("Please rate the following items")
+    //                 and the voucher offer settings (doc 'voucher')
     // ============================================
     match /surveyConfig/{docId} {
-      allow read: if true;   // the public survey reads the categories
-      allow write: if isAdmin() && docId == 'ratingCategories'
-        && request.resource.data.keys().hasOnly(['title', 'categories', 'updatedAt'])
-        && request.resource.data.title is string && request.resource.data.title.size() <= 120
-        && request.resource.data.categories is list
-        && request.resource.data.categories.size() >= 1
-        && request.resource.data.categories.size() <= 10;
+      allow read: if true;   // the public survey reads the categories and the voucher offer
+      allow write: if isAdmin() && (
+        (docId == 'ratingCategories'
+          && request.resource.data.keys().hasOnly(['title', 'categories', 'updatedAt'])
+          && request.resource.data.title is string && request.resource.data.title.size() <= 120
+          && request.resource.data.categories is list
+          && request.resource.data.categories.size() >= 1
+          && request.resource.data.categories.size() <= 10)
+        || (docId == 'voucher' && validVoucherConfig(request.resource.data)));
     }
 
     // ============================================

@@ -43,6 +43,7 @@
   <script src="js/branches.js?v=20261114k"></script>
   <script src="js/employees.js?v=20261114k"></script>
   <script src="js/ratingConfig.js?v=20261114k"></script>
+  <script src="js/voucherConfig.js?v=20261114m"></script>
 </head>
 <body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
 
@@ -185,20 +186,11 @@
     // The code is created here and emailed with EmailJS. Anti-spam lives in the Firestore
     // rules (one voucher per email, must come from a fresh real survey) and at the counter
     // (staff ask to see the voucher email before redeeming).
-    const VOUCHER_PERCENT = 15;
+    // The offer itself (discount, applies to, minimum spend, validity, on/off) comes from
+    // js/voucherConfig.js and is edited on the dashboard's Vouchers page.
     const LOGO_PATH = "images/jiangnan-logo.png";     // logo shown in the voucher email + voucher page
     const VOUCHER_PAGE = "voucher.html";              // "Redeem Gift" button opens this page
 
-    // Valid until the same date next month (clamped: 31 Jan → 28/29 Feb). Same rule as js/vouchers.js.
-    function addOneMonth(d) {
-      const r = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      const lastDay = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
-      r.setDate(Math.min(d.getDate(), lastDay));
-      return r;
-    }
-    function formatVoucherDate(d) { // "14 Nov 2026"
-      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-    }
     const VOUCHER_EMAIL_KEY = "dpVoucherEmail";
     const VOUCHER_ENABLED = typeof EMAILJS_PUBLIC_KEY !== "undefined"
       && !!EMAILJS_PUBLIC_KEY && !!EMAILJS_SERVICE_ID && !!EMAILJS_VOUCHER_TEMPLATE_ID
@@ -540,8 +532,8 @@
       const c = voucherCard;
       const email = `<strong class="text-gray-900 break-all">${escapeHtml(c.email)}</strong>`;
       const afterEmail = {
-        sending: `Sending your ${VOUCHER_PERCENT}% voucher to ${email}…`,
-        sent: `Your ${VOUCHER_PERCENT}% voucher has been sent to ${email}. Show that email to staff on your next visit. Check your spam folder if you don't see it.`,
+        sending: `Sending your ${voucherConfig.discountPercent}% voucher to ${email}…`,
+        sent: `Your ${voucherConfig.discountPercent}% voucher has been sent to ${email}. Show that email to staff on your next visit. Check your spam folder if you don't see it.`,
         duplicate: `${email} has already received a voucher (one per email). Please check your inbox for the earlier email.`,
         failed: `Your voucher is saved, but the email didn't send. Show this screen to staff on your next visit. They can find it by your email: ${email}.`,
         closed: `Your review has been sent to Jiang Nan Hotpot management.`
@@ -562,8 +554,10 @@
     // Voucher email box on the thank-you screen (the review is already saved at this point)
     function renderVoucherCard() {
       const c = voucherCard;
+      // Hidden until the settings load (no flash of an offer that's switched off) and while paused
+      if (!voucherConfigLoaded || !voucherConfig.enabled) return "";
       const body = {
-        form: `<p class="text-[15px] font-bold text-gray-900">Get ${VOUCHER_PERCENT}% off your next visit</p>
+        form: `<p class="text-[15px] font-bold text-gray-900">Get ${voucherConfig.discountPercent}% off ${escapeHtml(voucherConfig.appliesTo)} on your next visit</p>
                <p class="text-[13px] text-gray-600 mt-1">Enter your email to get your voucher. One voucher per email.</p>
                <div class="flex flex-col sm:flex-row gap-2 mt-3">
                  <input id="voucherEmailInput" type="email" data-field="voucherEmail" value="${escapeHtml(voucherEmailInput)}" placeholder="you@example.com" autocomplete="email" maxlength="254" class="${INPUT} flex-1 min-w-0">
@@ -609,13 +603,32 @@
       voucherCard = { stage: "sending", email };
       render();
       const code = makeVoucherCode();
+      // Use the very latest offer: the Firestore rules compare the voucher against it
+      let cfg;
+      try {
+        cfg = await fetchVoucherConfig();
+      } catch (err) {
+        console.warn("Voucher settings not loaded:", err.code, err.message);
+        voucherCard = { stage: "form", email, error: "The voucher couldn't be created right now. Please try again." };
+        return render();
+      }
+      if (!cfg.enabled) { // switched off on the dashboard after this page loaded
+        voucherCard = { stage: "closed", email: "" };
+        saveDoneState();
+        return render();
+      }
+      const now = new Date();
+      const expires = voucherExpiryFrom(now, cfg);
       try {
         await db.collection("vouchers").doc(email).set({
           code,
           email,
           surveyId,
           branchId,
-          discountPercent: VOUCHER_PERCENT,
+          discountPercent: cfg.discountPercent,
+          appliesTo: cfg.appliesTo,
+          minSpend: cfg.minSpend,
+          expiresAt: firebase.firestore.Timestamp.fromDate(expires),
           status: "active",
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
@@ -631,17 +644,18 @@
         return render();
       }
       try {
-        const now = new Date();
         const validFrom = formatVoucherDate(now);
-        const validUntil = formatVoucherDate(addOneMonth(now));
+        const validUntil = formatVoucherDate(expires);
         const firstName = (customerNameText || "").trim() || "there";
         const redeemUrl = new URL(VOUCHER_PAGE, location.href);
-        redeemUrl.search = new URLSearchParams({ c: code, n: firstName, f: validFrom, u: validUntil }).toString();
+        redeemUrl.search = new URLSearchParams({ c: code, n: firstName, d: String(cfg.discountPercent), a: cfg.appliesTo }).toString();
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_VOUCHER_TEMPLATE_ID, {
           to_email: email,
           customer_name: firstName,
           voucher_code: code,
-          discount: VOUCHER_PERCENT + "%",
+          discount: cfg.discountPercent + "%",
+          applies_to: cfg.appliesTo,
+          min_spend_line: minSpendLine(cfg.minSpend, cfg.appliesTo),
           valid_from: validFrom,
           valid_until: validUntil,
           expires: validUntil, // kept for older templates
@@ -787,6 +801,11 @@
     document.getElementById("backBtn").addEventListener("click", back);
 
     // ---------- Live data hooks ----------
+    // Voucher offer changed on the dashboard (or first loaded): redraw the thank-you card
+    window.onVoucherConfigChanged = () => {
+      if (finished) render();
+    };
+
     // Rating categories changed on the dashboard (live): drop answers for removed categories, redraw
     window.onRatingConfigChanged = () => {
       const ids = new Set(ratingConfig.categories.map(c => c.id));

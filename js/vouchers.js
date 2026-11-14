@@ -1,15 +1,17 @@
-// Vouchers (15% thank-you vouchers, one per email, emailed after the survey) — dashboard only.
+// Vouchers (thank-you vouchers, one per email, emailed after the survey) — dashboard only.
 // Customers create them from the survey page; staff look them up by code or email and redeem once,
 // after the customer shows the voucher email on their phone (customers never log in).
-// Valid until the end of the same date next month (the date printed in the email).
-// The Firestore rules enforce: admin-only list/read, single redeem, max 32 days.
+// The offer (discount, applies to, min spend, validity, on/off) is edited in the "Voucher settings"
+// card here and stored by js/voucherConfig.js. Each voucher keeps its own deal and expiresAt.
+// The Firestore rules enforce: admin-only list/read, single redeem, before expiry.
 
-// Same rule as addOneMonth() in review.html (31 Jan → 28/29 Feb)
-function addOneMonth(d) {
-    const r = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-    const lastDay = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
-    r.setDate(Math.min(d.getDate(), lastDay));
-    return r;
+// Deal of an existing voucher (older vouchers predate these fields)
+const LEGACY_APPLIES_TO = "Ala Carte Items";
+function voucherDeal(v) {
+    const pct = v.discountPercent || 5;
+    const applies = v.appliesTo || LEGACY_APPLIES_TO;
+    const min = typeof v.minSpend === "number" ? v.minSpend : null;
+    return { pct, applies, min, text: `${pct}% off ${applies}` + (min ? ` · min ${formatPeso(min)}` : "") };
 }
 
 
@@ -22,11 +24,10 @@ function voucherCreated(v) {
 }
 
 function voucherExpiry(v) {
+    if (v.expiresAt && typeof v.expiresAt.toDate === "function") return v.expiresAt.toDate();
     const c = voucherCreated(v);
-    if (!c) return null;
-    const last = addOneMonth(c);
-    last.setHours(23, 59, 59, 999); // valid through the whole last day
-    return last;
+    // Older vouchers (no expiresAt) were valid for 1 calendar month
+    return c ? voucherExpiryFrom(c, { validityValue: 1, validityUnit: "months" }) : null;
 }
 
 function voucherState(v) {
@@ -99,7 +100,7 @@ function voucherCardHtml(v) {
                 <div class="flex items-center gap-2 flex-wrap">
                     <span class="font-mono text-[16px] font-bold tracking-[0.15em] text-gray-900">${escapeHtml(v.code || "")}</span>
                     <span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${pill}">${state}</span>
-                    <span class="text-[12px] font-semibold text-tvRed">${escapeHtml(String(v.discountPercent || 5))}% off</span>
+                    <span class="text-[12px] font-semibold text-tvRed">${escapeHtml(voucherDeal(v).text)}</span>
                 </div>
                 <p class="text-[12px] text-gray-500 mt-1 break-words">${escapeHtml(v.email || "")}</p>
                 <p class="text-[12px] text-gray-500">${details.join(" · ")}</p>
@@ -184,7 +185,7 @@ async function redeemVoucher(id, btn) {
     // Ownership check at the counter: customers never log in, so staff confirm the email
     if (!confirm(
         `First ask the customer to show the voucher email sent to:\n${v.email}\n\n` +
-        `Redeem voucher ${v.code} (${v.discountPercent || 5}% off) at ${branchName(branchId)}?\n` +
+        `Redeem voucher ${v.code} (${voucherDeal(v).text}) at ${branchName(branchId)}?\n` +
         `It can only be used once.`)) return;
     if (btn) btn.disabled = true;
     try {
@@ -194,7 +195,7 @@ async function redeemVoucher(id, btn) {
             redeemedBy: firebase.auth().currentUser.uid,
             redeemedBranchId: branchId
         });
-        showToast(`Voucher ${v.code} redeemed — apply ${v.discountPercent || 5}% off.`);
+        showToast(`Voucher ${v.code} redeemed — apply ${voucherDeal(v).pct}% off ${voucherDeal(v).applies}.`);
     } catch (error) {
         console.error("Error redeeming voucher:", error);
         showToast(error.code === "permission-denied"
@@ -204,9 +205,88 @@ async function redeemVoucher(id, btn) {
     }
 }
 
+// ---------- Voucher settings card ----------
+let voucherSettingsDirty = false; // don't overwrite what the admin is typing when the doc updates
+
+function readVoucherSettingsForm() {
+    return {
+        enabled: document.getElementById("vsEnabled").checked,
+        discountPercent: Number(document.getElementById("vsDiscount").value),
+        appliesTo: document.getElementById("vsAppliesTo").value.trim(),
+        minSpend: Number(document.getElementById("vsMinSpend").value),
+        validityValue: Number(document.getElementById("vsValidityValue").value),
+        validityUnit: document.getElementById("vsValidityUnit").value
+    };
+}
+
+function fillVoucherSettingsForm(c) {
+    document.getElementById("vsEnabled").checked = c.enabled;
+    document.getElementById("vsDiscount").value = c.discountPercent;
+    document.getElementById("vsAppliesTo").value = c.appliesTo;
+    document.getElementById("vsMinSpend").value = c.minSpend;
+    document.getElementById("vsValidityValue").value = c.validityValue;
+    document.getElementById("vsValidityUnit").value = c.validityUnit;
+    updateVoucherSettingsPreview();
+}
+
+// Returns an error message, or "" when the form is valid
+function voucherSettingsError(f) {
+    if (!Number.isInteger(f.discountPercent) || f.discountPercent < 1 || f.discountPercent > 100) return "Discount must be a whole number from 1 to 100.";
+    if (!f.appliesTo) return "Type what the discount applies to (e.g. Ala Carte Items).";
+    if (f.appliesTo.length > 60) return "\"Applies to\" can be at most 60 characters.";
+    if (!Number.isInteger(f.minSpend) || f.minSpend < 0 || f.minSpend > 1000000) return "Minimum spend must be a whole number from 0 to 1,000,000 (0 = no minimum).";
+    const max = VOUCHER_UNIT_MAX[f.validityUnit];
+    if (!Number.isInteger(f.validityValue) || f.validityValue < 1 || f.validityValue > max) return `Validity must be 1 to ${max} ${f.validityUnit}.`;
+    return "";
+}
+
+function updateVoucherSettingsPreview() {
+    const f = readVoucherSettingsForm();
+    document.getElementById("vsEnabledLabel").textContent = f.enabled ? "On" : "Off";
+    const el = document.getElementById("vsPreview");
+    const err = voucherSettingsError(f);
+    if (err) {
+        el.className = "text-[12.5px] font-medium text-tvRed";
+        el.textContent = err;
+        return;
+    }
+    el.className = "text-[12.5px] text-gray-600";
+    el.textContent = f.enabled
+        ? `New vouchers: ${f.discountPercent}% off ${f.appliesTo} · ${f.minSpend > 0 ? "min " + formatPeso(f.minSpend) : "no minimum spend"} · valid ${validityLabel(f)} from the day it's sent.`
+        : "Vouchers are paused: customers can still leave reviews, but no voucher is offered.";
+}
+
+async function saveVoucherSettings() {
+    const f = readVoucherSettingsForm();
+    const err = voucherSettingsError(f);
+    if (err) { showToast(err); return; }
+    const btn = document.getElementById("vsSaveBtn");
+    btn.disabled = true;
+    try {
+        await saveVoucherConfig(f);
+        voucherSettingsDirty = false;
+        showToast(f.enabled ? `Voucher settings saved: ${f.discountPercent}% off ${f.appliesTo}.` : "Vouchers paused.");
+    } catch (error) {
+        console.error("Error saving voucher settings:", error);
+        showToast(error.code === "permission-denied"
+            ? "Couldn't save: publish the latest Firestore rules first."
+            : "Couldn't save voucher settings. Please try again.");
+    }
+    btn.disabled = false;
+}
+
+window.onVoucherConfigChanged = () => {
+    if (!voucherSettingsDirty && document.getElementById("voucherSettingsForm")) fillVoucherSettingsForm(voucherConfig);
+};
+
 document.addEventListener("DOMContentLoaded", () => {
     const view = document.getElementById("vouchersView");
     if (!view) return;
+    const settingsForm = document.getElementById("voucherSettingsForm");
+    fillVoucherSettingsForm(voucherConfig);
+    settingsForm.addEventListener("input", () => { voucherSettingsDirty = true; updateVoucherSettingsPreview(); });
+    settingsForm.addEventListener("change", () => { voucherSettingsDirty = true; updateVoucherSettingsPreview(); });
+    settingsForm.addEventListener("submit", e => { e.preventDefault(); saveVoucherSettings(); });
     document.getElementById("voucherLookupForm").addEventListener("submit", e => {
         e.preventDefault();
         findVoucher(document.getElementById("voucherCodeInput").value);
