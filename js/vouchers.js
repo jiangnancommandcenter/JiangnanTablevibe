@@ -4,7 +4,7 @@
 // Valid until the end of the same date next month (the date printed in the email).
 // The Firestore rules enforce: admin-only list/read, single redeem, max 32 days.
 
-// Same rule as addOneMonth() in jiangnan_customer_review_survey.html (31 Jan → 28/29 Feb)
+// Same rule as addOneMonth() in review.html (31 Jan → 28/29 Feb)
 function addOneMonth(d) {
     const r = new Date(d.getFullYear(), d.getMonth() + 1, 1);
     const lastDay = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
