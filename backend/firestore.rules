@@ -1,0 +1,244 @@
+rules_version = '2';
+
+// TableVibe security rules (BACKEND-03 / BACKEND-11)
+// Serverless architecture: these rules ARE the authorization layer (no Cloud Functions,
+// no backend server). Role + org + branch come from Firebase Auth Custom Claims, which
+// are set exclusively by services/auth.service.js using the Admin SDK via a one-time
+// local script you run yourself (see docs/DEPLOYMENT.md) — never from client-writable
+// fields. Never trust any field inside a document for authorization decisions.
+
+service cloud.firestore {
+
+function authed() {
+  return request.auth != null;
+}
+
+function claims() {
+  return request.auth.token;
+}
+
+function orgId() {
+  return claims().orgId;
+}
+
+function role() {
+  return claims().role;
+}
+
+function isSuperAdmin() { return authed() && role() == 'super_admin'; }
+function isAdmin()      { return authed() && role() in ['super_admin', 'admin']; }
+function isManagerUp()  { return authed() && role() in ['super_admin', 'admin', 'branch_manager']; }
+function isStaffUp()    { return authed() && role() in ['super_admin', 'admin', 'branch_manager', 'staff']; }
+
+function sameOrg(data) {
+  return authed() && data.organizationId == orgId();
+}
+
+// branch_manager/staff are additionally scoped to the branches listed in their token
+// (claims().branchIds, an array kept small on purpose — add branches sparingly).
+function inBranch(data) {
+  return isAdmin() ||
+    (data.branchId != null && claims().branchIds != null && data.branchId in claims().branchIds);
+}
+
+function unchanged(field) {
+  return request.resource.data[field] == resource.data[field];
+}
+
+match /databases/{database}/documents {
+
+  // ---------- Identity & Access ----------
+  match /users/{uid} {
+    allow read: if sameOrg(resource.data) && (request.auth.uid == uid || isManagerUp());
+    allow create: if isAdmin() && sameOrg(request.resource.data);
+    allow update: if isAdmin() && sameOrg(resource.data) && sameOrg(request.resource.data);
+    allow delete: if false; // deactivate via status field, never hard-delete
+  }
+
+  match /roles/{roleId} {
+    allow read: if authed();
+    allow write: if false; // seed data, managed outside the app
+  }
+
+  match /permissions/{permissionId} {
+    allow read: if authed();
+    allow write: if false;
+  }
+
+  // ---------- Organization Structure ----------
+  match /organizations/{orgDocId} {
+    allow read: if authed() && orgDocId == orgId();
+    allow update: if isSuperAdmin() && orgDocId == orgId();
+    allow create, delete: if false; // provisioning is a one-time manual step
+  }
+
+  match /branches/{branchId} {
+    allow read: if sameOrg(resource.data) && inBranch(resource.data);
+    allow create: if isAdmin() && sameOrg(request.resource.data);
+    allow update: if isManagerUp() && sameOrg(resource.data) && inBranch(resource.data)
+                  && sameOrg(request.resource.data);
+    allow delete: if isSuperAdmin() && sameOrg(resource.data);
+  }
+
+  match /employees/{employeeId} {
+    allow read: if sameOrg(resource.data) && inBranch(resource.data);
+    allow create: if isManagerUp() && sameOrg(request.resource.data) && inBranch(request.resource.data);
+    allow update: if isManagerUp() && sameOrg(resource.data) && inBranch(resource.data);
+    allow delete: if isAdmin() && sameOrg(resource.data);
+  }
+
+  // ---------- Surveys & Feedback ----------
+  match /surveys/{surveyId} {
+    // Published surveys must be publicly readable: an anonymous customer scanning a QR
+    // code has to load the questions before they've ever authenticated. Draft/archived
+    // stay staff-only.
+    allow read: if resource.data.status == 'published' || sameOrg(resource.data);
+    allow create: if isManagerUp() && sameOrg(request.resource.data);
+    // versioning: published surveys are never mutated, only superseded by a new doc
+    allow update: if isManagerUp() && sameOrg(resource.data) && resource.data.status == 'draft';
+    allow delete: if isAdmin() && sameOrg(resource.data) && resource.data.status == 'draft';
+  }
+
+  match /feedback_categories/{categoryId} {
+    allow read: if sameOrg(resource.data);
+    allow write: if isManagerUp() && sameOrg(request.resource.data);
+  }
+
+  match /qr_codes/{qrId} {
+    allow read: if true; // public: a scanned QR must resolve to its survey without login
+    allow create: if isManagerUp() && sameOrg(request.resource.data);
+    // scanCount increment is the only public mutation allowed, and only by +1
+    allow update: if (isManagerUp() && sameOrg(resource.data)) ||
+      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['scanCount']) &&
+       request.resource.data.scanCount == resource.data.scanCount + 1);
+    allow delete: if isAdmin() && sameOrg(resource.data);
+  }
+
+  match /feedback/{feedbackId} {
+    // public submission (customer scanning a QR has no account) but answers are immutable
+    allow create: if request.resource.data.status == 'new'
+                  && request.resource.data.resolvedBy == null
+                  && request.resource.data.createdAt == request.time;
+    allow read: if sameOrg(resource.data) && inBranch(resource.data);
+    // resolution only: answers/surveyId/surveyVersion/createdAt must never change
+    allow update: if isStaffUp() && sameOrg(resource.data) && inBranch(resource.data)
+      && unchanged('answers') && unchanged('surveyId') && unchanged('surveyVersion')
+      && unchanged('createdAt') && unchanged('organizationId') && unchanged('branchId');
+    allow delete: if false; // immutable historical record
+  }
+
+  match /feedback_replies/{replyId} {
+    allow read: if sameOrg(resource.data) && inBranch(resource.data);
+    allow create: if isStaffUp() && sameOrg(request.resource.data) && inBranch(request.resource.data)
+                  && request.resource.data.authorUid == request.auth.uid;
+    allow update, delete: if false; // replies are append-only
+  }
+
+  // ---------- External Reviews & Rewards ----------
+  match /google_integrations/{orgDocId} {
+    // tokens never readable by anything but org admins of that exact org
+    allow read, write: if isAdmin() && orgDocId == orgId();
+  }
+
+  match /google_reviews/{reviewId} {
+    allow read: if sameOrg(resource.data) && inBranch(resource.data);
+    allow write: if isAdmin() && sameOrg(request.resource.data); // written by the sync job only
+  }
+
+  match /rewards/{rewardId} {
+    allow read: if sameOrg(resource.data);
+    allow write: if isManagerUp() && sameOrg(request.resource.data);
+  }
+
+  match /reward_redemptions/{redemptionId} {
+    allow read: if sameOrg(resource.data) && inBranch(resource.data);
+    allow create: if isStaffUp() && sameOrg(request.resource.data) && inBranch(request.resource.data)
+                  && request.resource.data.redeemedBy == request.auth.uid;
+    allow update, delete: if false; // redemption is a one-time historical fact
+  }
+
+  // ---------- Comms, Reports & System ----------
+  match /notifications/{notificationId} {
+    allow read: if authed() && resource.data.recipientUid == request.auth.uid;
+    allow create: if isStaffUp() && sameOrg(request.resource.data);
+    // recipient may only flip `read`
+    allow update: if authed() && resource.data.recipientUid == request.auth.uid
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    allow delete: if false;
+  }
+
+  match /notification_settings/{uid} {
+    allow read, write: if authed() && request.auth.uid == uid;
+  }
+
+  match /reports/{reportId} {
+    allow read: if sameOrg(resource.data);
+    allow create: if isStaffUp() && sameOrg(request.resource.data)
+                  && request.resource.data.generatedBy == request.auth.uid;
+    allow update, delete: if false;
+  }
+
+  match /activity_logs/{logId} {
+    allow read: if isAdmin() && sameOrg(resource.data);
+    allow create: if authed() && sameOrg(request.resource.data)
+                  && request.resource.data.actorUid == request.auth.uid
+                  && request.resource.data.createdAt == request.time;
+    allow update, delete: if false; // immutable audit trail, no exceptions
+  }
+
+  match /system_settings/{orgDocId} {
+    allow read: if authed() && orgDocId == orgId();
+    allow write: if isSuperAdmin() && orgDocId == orgId();
+  }
+
+  // Backup run log (BACKEND-10): written only by the offline backup script (Admin SDK,
+  // bypasses rules entirely) under the fixed doc id __backup_log__. Not org-scoped — this
+  // build assumes a single organization; if you add real multi-tenant orgs later, move
+  // this under each org's system_settings doc instead and scope the read accordingly.
+  match /system_settings/__backup_log__/runs/{runId} {
+    allow read: if isAdmin();
+    allow write: if false; // Admin SDK only
+  }
+
+  match /email_logs/{logId} {
+    allow read: if isAdmin() && sameOrg(resource.data);
+    allow create: if authed() && sameOrg(request.resource.data);
+    allow update, delete: if false;
+  }
+
+  match /integrations/{integrationId} {
+    allow read: if isAdmin() && sameOrg(resource.data);
+    allow write: if isAdmin() && sameOrg(request.resource.data);
+  }
+
+  // ---------- Cloudinary asset metadata (BACKEND-04) ----------
+  match /cloudinary_assets/{assetId} {
+    allow read: if sameOrg(resource.data);
+    allow create: if authed() && sameOrg(request.resource.data)
+                  && request.resource.data.ownerUid == request.auth.uid;
+    allow delete: if isStaffUp() && sameOrg(resource.data);
+    allow update: if false;
+  }
+
+  match /cloudinary_delete_queue/{queueId} {
+    allow read: if isAdmin() && sameOrg(resource.data);
+    allow create: if isStaffUp() && sameOrg(request.resource.data);
+    allow update: if isAdmin() && sameOrg(resource.data); // admin marks processed after running the drain script
+    allow delete: if false;
+  }
+
+  // ---------- Idempotency markers (BACKEND-05) ----------
+  // Firestore rules wildcards must cover a whole path segment, so the previous
+  // `{collectionName}_idempotency` pattern never matched. Match any collection here
+  // and allow only names ending in `_idempotency`.
+  match /{collectionName}/{key} {
+    allow read, create: if collectionName.matches('.*_idempotency') && authed();
+    allow update, delete: if false;
+  }
+
+  // Default deny
+  match /{document=**} {
+    allow read, write: if false;
+  }
+}
+}

@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jiang Nan Hotpot — Rate Your Visit</title>
+  <link rel="icon" type="image/png" href="images/jiangnan-logo.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4.4.1/dist/email.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+          colors: {
+            tvDark: '#141414',
+            tvDarkHover: '#222222',
+            tvRed: '#c8102e',
+            tvRedHover: '#a70d26',
+            tvBg: '#f3f4f6',
+            tvBar: '#b3b3b3',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { overflow-x: hidden; max-width: 100%; }
+    #stepHost { transition: opacity .18s ease, transform .18s ease; }
+    #stepHost.is-leaving { opacity: 0; transform: translateX(-12px); }
+    #stepHost.is-entering { opacity: 0; transform: translateX(12px); }
+  </style>
+  <!-- ?v= forces browsers to fetch the current files; bump it whenever these change -->
+  <script src="js/firebase-config.js?v=20261114k"></script>
+  <script src="js/branches.js?v=20261114k"></script>
+  <script src="js/employees.js?v=20261114k"></script>
+  <script src="js/ratingConfig.js?v=20261114k"></script>
+</head>
+<body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
+
+  <!-- Top Header Bar (white, so the logo shows in its real colors) -->
+  <header class="h-[58px] bg-white text-gray-900 flex items-center justify-between px-4 sm:px-6 border-b border-gray-200 sticky top-0 z-40">
+    <div class="flex items-center gap-3 min-w-0">
+      <img src="images/jiangnan-logo.png" alt="Jiang Nan Hotpot" class="h-[42px] w-[42px] object-contain shrink-0">
+      <div class="min-w-0">
+        <div class="font-bold text-[16px] tracking-[0.02em] text-gray-900 leading-tight">Jiang Nan Hotpot</div>
+        <div class="text-[11px] text-gray-500 leading-tight truncate">Verified Diner Experience Survey</div>
+      </div>
+    </div>
+    <button type="button" onclick="openAdminModal()" class="text-[12px] font-semibold text-gray-600 hover:text-gray-900 border border-gray-300 hover:border-gray-400 rounded-[6px] px-3 py-1.5 transition-colors shrink-0">
+      Edit labels
+    </button>
+  </header>
+
+  <!-- One question at a time -->
+  <main class="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-7">
+    <div class="w-full max-w-xl bg-white border border-gray-200 rounded-[10px] shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
+      <div class="w-full bg-gray-100 h-1.5">
+        <div id="surveyProgressBar" class="bg-tvRed h-full transition-all duration-300" style="width: 0%;"></div>
+      </div>
+
+      <div class="px-5 sm:px-8 pt-4 flex items-center justify-between min-h-[40px]">
+        <button id="backBtn" type="button" class="invisible inline-flex items-center gap-1 text-[13px] font-medium text-gray-500 hover:text-gray-900 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+          Back
+        </button>
+        <span id="stepCounter" class="text-[12px] font-semibold text-gray-500"></span>
+      </div>
+
+      <div id="stepHost" class="px-5 sm:px-8 pt-3 pb-7 sm:pb-8 min-h-[360px] flex flex-col"></div>
+    </div>
+  </main>
+
+  <!-- Label Editor Modal (changes display labels on this device only) -->
+  <div id="adminModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] z-50 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle">
+    <div class="bg-white rounded-[10px] border border-gray-200 shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+      <div class="px-6 pt-6 pb-3 flex items-start justify-between">
+        <div>
+          <h3 id="adminModalTitle" class="text-lg font-bold text-gray-900">Edit Survey Labels</h3>
+          <p class="text-[13px] text-gray-500">Changes the titles shown on this screen only.</p>
+        </div>
+        <button type="button" onclick="closeAdminModal()" class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-6 py-3 space-y-4 overflow-y-auto flex-1">
+        <div>
+          <label for="editBranchTitle" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Branch Question</label>
+          <input type="text" id="editBranchTitle" class="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
+        </div>
+        <div>
+          <label for="editCommentTitle" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Comment Question</label>
+          <input type="text" id="editCommentTitle" class="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
+        </div>
+        <div>
+          <label for="editStaffTitle" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Staff Question</label>
+          <input type="text" id="editStaffTitle" class="w-full px-3.5 py-2 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2.5">
+        <button type="button" onclick="closeAdminModal()" class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+        <button type="button" onclick="saveAdminQuestions()" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="surveyToast" class="fixed bottom-5 right-5 z-50 bg-tvDark text-white text-xs font-medium px-4 py-3 rounded-[8px] shadow-lg border border-neutral-800 transition-all duration-200 translate-y-3 opacity-0 pointer-events-none flex items-center gap-2.5 max-w-[calc(100vw-2.5rem)]">
+    <span class="w-2 h-2 rounded-full bg-tvRed shrink-0"></span>
+    <span id="surveyToastMessage"></span>
+  </div>
+
+  <script>
+    // =====================================================================
+    // One-question-at-a-time survey. Answering a tap question (stars, a
+    // choice, a branch, a staff member) moves on automatically; text
+    // questions have a Next button. Data saved is the same as before.
+    // =====================================================================
+
+    const STAR_PATH = "M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z";
+    const RATING_WORDS = ["", "Poor", "Fair", "Good", "Great", "Excellent"];
+    const AUTO_ADVANCE_MS = 350;
+    const OPTION_IDLE = "w-full px-4 py-3.5 rounded-[8px] border border-gray-200 bg-white text-[14px] text-gray-800 hover:border-gray-400 transition-colors cursor-pointer text-left flex items-center gap-3";
+    const OPTION_ACTIVE = "w-full px-4 py-3.5 rounded-[8px] border border-tvRed bg-red-50/50 text-[14px] font-semibold text-tvRed transition-colors cursor-pointer text-left flex items-center gap-3";
+    const INPUT = "w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-[6px] text-gray-900 placeholder-gray-400 focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed";
+    // Editable display labels ("Edit labels" button)
+    const labels = {
+      branchTitle: "Which branch did you visit today?",
+      commentTitle: "Share your detailed feedback",
+      staffTitle: "Who assisted your table?"
+    };
+    // The star-rating categories and their title come from js/ratingConfig.js (edited on the dashboard)
+
+    // ---------- Preview mode (?preview=1) — the dashboard's phone simulator ----------
+    // Display only: nothing is ever saved, no voucher is created or emailed, the
+    // "already submitted" lock is ignored, and questions update live as the admin edits them.
+    const PREVIEW = new URLSearchParams(location.search).get("preview") === "1";
+    if (PREVIEW) {
+      // Hard safety net: whatever code path runs, this page cannot write surveys or vouchers.
+      const blockedWrite = async () => {
+        throw Object.assign(new Error("Preview mode: nothing is saved."), { code: "preview-blocked" });
+      };
+      const realCollection = db.collection.bind(db);
+      db.collection = name => (name === "surveys" || name === "vouchers")
+        ? { add: blockedWrite, doc: () => ({ set: blockedWrite, update: blockedWrite }) }
+        : realCollection(name);
+      const labelsBtn = document.querySelector('[onclick="openAdminModal()"]');
+      if (labelsBtn) labelsBtn.remove(); // the label editor isn't part of what customers see
+      document.body.insertAdjacentHTML("afterbegin",
+        `<div class="bg-tvRed text-white text-[11px] font-bold tracking-[0.08em] uppercase text-center py-1.5 select-none">Demo · Reviews won't be saved</div>`);
+    }
+
+    // Branch from the QR code link, e.g. ?branch=bgc — the branch question is skipped
+    const requestedBranchId = new URLSearchParams(location.search).get("branch") || "";
+    let skipBranchStep = false;
+
+    // ---------- Answers (nothing pre-answered) ----------
+    let selectedBranchId = "";
+    let ratingValues = {}; // { <category id>: 1..5 } for the "Please rate the following items" screen
+    let atmosphereOpenStar = 0;
+    let atmosphereOpenText = "";
+    let surveyAnswers = {};
+    let loadedQuestions = [];
+    let customerName = "";
+    let customerComment = "";
+    let selectedStaffMember = "";
+    let staffRating = 0;
+
+    // ---------- Flow state ----------
+    let currentKey = "branch";
+    let finished = false;
+    let advancing = false;
+    let isSubmitting = false;
+    let lastSummary = null;
+
+    // ---------- Voucher: emailed on Submit (no customer login) ----------
+    // The code is created here and emailed with EmailJS. Anti-spam lives in the Firestore
+    // rules (one voucher per email, must come from a fresh real survey) and at the counter
+    // (staff ask to see the voucher email before redeeming).
+    const VOUCHER_PERCENT = 15;
+    const LOGO_PATH = "images/jiangnan-logo.png";     // logo shown in the voucher email + voucher page
+    const VOUCHER_PAGE = "voucher.html";              // "Redeem Gift" button opens this page
+
+    // Valid until the same date next month (clamped: 31 Jan → 28/29 Feb). Same rule as js/vouchers.js.
+    function addOneMonth(d) {
+      const r = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      const lastDay = new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate();
+      r.setDate(Math.min(d.getDate(), lastDay));
+      return r;
+    }
+    function formatVoucherDate(d) { // "14 Nov 2026"
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    }
+    const VOUCHER_EMAIL_KEY = "dpVoucherEmail";
+    const VOUCHER_ENABLED = typeof EMAILJS_PUBLIC_KEY !== "undefined"
+      && !!EMAILJS_PUBLIC_KEY && !!EMAILJS_SERVICE_ID && !!EMAILJS_VOUCHER_TEMPLATE_ID
+      && typeof emailjs !== "undefined";
+    if (VOUCHER_ENABLED) emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+    else console.warn("Voucher emails are off: set the EMAILJS_* values in js/firebase-config.js.");
+
+    function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+    function storageSet(k, v) { if (PREVIEW) return; try { localStorage.setItem(k, v); } catch {} }
+    function storageDel(k) { try { localStorage.removeItem(k); } catch {} }
+
+    // ---------- "Already submitted" lock (this device) ----------
+    // After submitting, a refresh shows the same thank-you screen instead of a new survey.
+    // This is a deterrent on the customer's own phone; the real voucher protection is in
+    // the Firestore rules (one voucher per email).
+    const DONE_KEY = "dpSurveyDone";
+    const DONE_LOCK_HOURS = 24;            // the device can submit again after this
+    const VOUCHER_WINDOW_MIN = 14;         // rules accept a voucher up to 15 min after the survey
+
+    function saveDoneState() {
+      if (PREVIEW) return;
+      const stage = voucherCard.stage === "sending" ? "form" : voucherCard.stage;
+      storageSet(DONE_KEY, JSON.stringify({
+        at: Date.now(),
+        surveyAt: (lastSummary && lastSummary.at) || Date.now(),
+        summary: lastSummary,
+        card: { stage, email: voucherCard.email || "" }
+      }));
+    }
+
+    // Returns true when this device finished a survey recently (then the thank-you screen is shown)
+    function restoreDoneState() {
+      let saved = null;
+      try { saved = JSON.parse(storageGet(DONE_KEY) || "null"); } catch { saved = null; }
+      if (!saved || !saved.at || Date.now() - saved.at > DONE_LOCK_HOURS * 3600e3) {
+        storageDel(DONE_KEY);
+        return false;
+      }
+      lastSummary = saved.summary || {};
+      let stage = (saved.card && saved.card.stage) || "form";
+      // The voucher can only be claimed shortly after the survey (Firestore rule); after that,
+      // just show the thank-you message.
+      if ((stage === "form" || stage === "none") && Date.now() - (saved.surveyAt || saved.at) > VOUCHER_WINDOW_MIN * 60e3) {
+        stage = "closed";
+      }
+      voucherCard = { stage, email: (saved.card && saved.card.email) || "", error: "" };
+      voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
+      finished = true;
+      return true;
+    }
+
+    // stage: "none" (no email given) | "sending" | "sent" | "duplicate" | "failed"
+    let voucherCard = { stage: "none", email: "" };
+    let voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
+
+    const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/; // same shape the Firestore rules accept
+
+    // 8 characters, no look-alikes (0/O, 1/I/L)
+    function makeVoucherCode() {
+      const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+      const bytes = new Uint8Array(8);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, b => abc[b % abc.length]).join("");
+    }
+    let renderedKey = null;
+    let readyAt = 0;
+
+    const stepHost = document.getElementById("stepHost");
+
+    // Ordered list of question keys for the current answers:
+    // built-in questions first, then the admin's own questions (Survey Questions page) at the end.
+    // Whatever question is last gets the "Submit Survey" button.
+    function getSteps() {
+      const steps = [];
+      if (!skipBranchStep) steps.push("branch");
+      steps.push("ratings", "atmo-open"); // all star-rating categories on one screen
+      steps.push("comment", "staff");
+      if (selectedStaffMember) steps.push("staff-rate");
+      loadedQuestions.forEach(q => steps.push("q:" + q.id));
+      return steps;
+    }
+
+    function isLastStep(key) {
+      const steps = getSteps();
+      return steps[steps.length - 1] === key;
+    }
+    let renderingLast = false; // true while the last question is being drawn → buttons become "Submit"
+
+    function branchEmployees() {
+      return (typeof employees !== "undefined" ? employees : [])
+        .filter(e => e.branchId === selectedBranchId && e.name);
+    }
+
+    function canAdvance(key) {
+      if (key === "branch") return activeBranches().some(b => b.id === selectedBranchId);
+      if (key === "ratings") return ratingConfig.categories.every(c => ratingValues[c.id] >= 1 && ratingValues[c.id] <= 5);
+      if (key.startsWith("q:")) {
+        const q = loadedQuestions.find(x => "q:" + x.id === key);
+        return !q || q.type !== "multiple_choice" || !!surveyAnswers[q.id];
+      }
+      return true;
+    }
+
+    // ---------- Navigation ----------
+    let transitioning = false;
+    function transitionTo(key) {
+      if (transitioning) return; // a fast double-tap must not skip a question
+      transitioning = true;
+      stepHost.classList.add("is-leaving");
+      setTimeout(() => {
+        transitioning = false;
+        currentKey = key;
+        render();
+        stepHost.classList.remove("is-leaving");
+        stepHost.classList.add("is-entering");
+        requestAnimationFrame(() => requestAnimationFrame(() => stepHost.classList.remove("is-entering")));
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }, 160);
+    }
+
+    function next() {
+      if (!canAdvance(currentKey)) return;
+      const steps = getSteps();
+      const i = steps.indexOf(currentKey);
+      if (i < steps.length - 1) transitionTo(steps[i + 1]);
+    }
+
+    function back() {
+      const steps = getSteps();
+      const i = steps.indexOf(currentKey);
+      if (i > 0) transitionTo(steps[i - 1]);
+    }
+
+    // Tap answers: show the selection briefly, then move on
+    function autoAdvance() {
+      if (advancing) return;
+      advancing = true;
+      setTimeout(() => {
+        advancing = false;
+        next();
+      }, AUTO_ADVANCE_MS);
+    }
+
+    // ---------- Rendering ----------
+    function stars(value, key, size = "w-10 h-10 sm:w-11 sm:h-11") {
+      let html = "";
+      for (let i = 1; i <= 5; i++) {
+        html += `
+          <button type="button" data-action="rate" data-key="${key}" data-value="${i}"
+                  class="${size} ${i <= value ? "text-tvRed" : "text-gray-300"} hover:text-tvRedHover transition-colors focus:outline-none"
+                  aria-label="${i} star${i > 1 ? "s" : ""}">
+            <svg class="w-full h-full fill-current pointer-events-none" viewBox="0 0 20 20"><path d="${STAR_PATH}"/></svg>
+          </button>`;
+      }
+      return `
+        <div class="flex items-center justify-center gap-1.5 sm:gap-2">${html}</div>
+        <p class="text-center text-[13px] font-semibold mt-3 h-5 ${value ? "text-tvRed" : "text-gray-400"}">${value ? RATING_WORDS[value] : "Tap a star"}</p>`;
+    }
+
+    function nextButton(label = "Next", { disabled = false, action = "next" } = {}) {
+      if (renderingLast && action === "next") { label = "Submit Survey"; action = "submit"; }
+      return `
+        <button type="button" data-action="${action}" ${disabled ? "disabled" : ""}
+                class="w-full sm:w-auto px-6 py-3 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white font-semibold text-[14px] transition-colors shadow-sm inline-flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+          <span>${label}</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="${action === "submit" ? "M4.5 12.75l6 6 9-13.5" : "M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"}"/></svg>
+        </button>`;
+    }
+
+    function shell({ eyebrow = "", title, hint = "", body, footer = "" }) {
+      return `
+        ${eyebrow ? `<div class="text-[11px] font-semibold tracking-[0.06em] uppercase text-tvRed mb-2">${escapeHtml(eyebrow)}</div>` : ""}
+        <h1 class="text-[22px] sm:text-[24px] font-bold text-gray-900 leading-tight">${escapeHtml(title)}</h1>
+        ${hint ? `<p class="text-[13px] text-gray-500 mt-1.5">${escapeHtml(hint)}</p>` : ""}
+        <div class="mt-7 flex-1">${body}</div>
+        ${footer ? `<div class="mt-7 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3">${footer}</div>` : ""}`;
+    }
+
+    function optionalSkip(label = "Skip") {
+      const action = renderingLast ? "submit" : "next";
+      if (renderingLast) label = "Skip & submit";
+      return `<button type="button" data-action="${action}" class="text-[13px] font-medium text-gray-500 hover:text-gray-900 transition-colors py-2">${label}</button>`;
+    }
+
+    function renderStep(key) {
+      // 1) Branch
+      if (key === "branch") {
+        const active = activeBranches();
+        let body;
+        if (!branchesLoaded) {
+          body = `<p class="text-[14px] text-gray-500">Loading branches…</p>`;
+        } else if (active.length === 0) {
+          body = `<div class="p-5 bg-gray-50 border border-gray-200 rounded-[8px] text-[14px] text-gray-600">The survey is unavailable right now. Please ask a staff member for help.</div>`;
+        } else {
+          body = `<div class="space-y-2.5">${active.map(b => `
+            <button type="button" data-action="pick-branch" data-id="${escapeHtml(b.id)}" class="${b.id === selectedBranchId ? OPTION_ACTIVE : OPTION_IDLE}">
+              <svg class="w-4 h-4 shrink-0 ${b.id === selectedBranchId ? "text-tvRed" : "text-gray-400"}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+              <span class="min-w-0">
+                <span class="block">${escapeHtml(b.name)}</span>
+                ${b.address ? `<span class="block text-[12px] font-normal text-gray-500 truncate">${escapeHtml(b.address)}</span>` : ""}
+              </span>
+            </button>`).join("")}</div>`;
+        }
+        return shell({ title: labels.branchTitle, hint: "Tap your branch to begin.", body });
+      }
+
+      // 2) Star ratings: every category on one screen ("Please rate the following items")
+      if (key === "ratings") {
+        const body = ratingConfig.categories.map(c => {
+          const v = ratingValues[c.id] || 0;
+          let starBtns = "";
+          for (let i = 1; i <= 5; i++) {
+            starBtns += `
+              <button type="button" data-action="rate" data-key="cat:${escapeHtml(c.id)}" data-value="${i}"
+                      class="w-9 h-9 ${i <= v ? "text-tvRed" : "text-gray-300"} hover:text-tvRedHover transition-colors focus:outline-none"
+                      aria-label="${escapeHtml(c.label)}: ${i} star${i > 1 ? "s" : ""}">
+                <svg class="w-full h-full fill-current pointer-events-none" viewBox="0 0 20 20"><path d="${STAR_PATH}"/></svg>
+              </button>`;
+          }
+          return `
+            <div class="py-3.5 border-b border-gray-100 last:border-b-0">
+              <div class="flex items-center gap-2.5 mb-1.5">
+                <span class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-[17px] leading-none shrink-0" aria-hidden="true">${escapeHtml(c.icon)}</span>
+                <span class="text-[15px] font-bold text-gray-900 min-w-0 break-words">${escapeHtml(c.label)}</span>
+                <span class="ml-auto text-[12px] font-semibold ${v ? "text-tvRed" : "text-gray-300"} shrink-0">${v ? RATING_WORDS[v] : ""}</span>
+              </div>
+              <div class="flex items-center gap-1">${starBtns}</div>
+            </div>`;
+        }).join("");
+        return shell({
+          title: ratingConfig.title,
+          hint: "Tap the stars for each item.",
+          body: `<div class="-mt-3">${body}</div>`,
+          footer: canAdvance("ratings") ? nextButton() : ""
+        });
+      }
+
+      // 3) Atmosphere open-ended (optional)
+      if (key === "atmo-open") {
+        return shell({
+          title: "What did you like about the atmosphere?",
+          hint: "Optional — rate it and tell us in your own words.",
+          body: `
+            <div class="mb-5">${stars(atmosphereOpenStar, "atmoOpen", "w-8 h-8")}</div>
+            <textarea data-field="atmosphereOpenText" rows="4" maxlength="1000" placeholder="Tell us what you liked about the atmosphere..." class="${INPUT}">${escapeHtml(atmosphereOpenText)}</textarea>`,
+          footer: optionalSkip() + nextButton()
+        });
+      }
+
+      // 4) Custom questions from the dashboard
+      if (key.startsWith("q:")) {
+        const q = loadedQuestions.find(x => "q:" + x.id === key);
+        if (!q) return "";
+        if (q.type === "multiple_choice") {
+          const chosen = surveyAnswers[q.id];
+          return shell({
+            title: q.question,
+            hint: "Choose one.",
+            body: `<div class="space-y-2.5">${(q.choices || []).map((c, i) => `
+              <button type="button" data-action="choice" data-qid="${escapeHtml(q.id)}" data-index="${i}" class="${c === chosen ? OPTION_ACTIVE : OPTION_IDLE}">
+                <span class="w-4 h-4 rounded-full border-2 shrink-0 ${c === chosen ? "border-tvRed bg-tvRed shadow-[inset_0_0_0_2px_#fff]" : "border-gray-300"}"></span>
+                <span>${escapeHtml(c)}</span>
+              </button>`).join("")}</div>`,
+            footer: chosen ? nextButton() : ""
+          });
+        }
+        return shell({
+          title: q.question,
+          hint: "Optional.",
+          body: `<textarea data-field="answer" data-qid="${escapeHtml(q.id)}" rows="5" maxlength="1000" placeholder="Type your answer here..." class="${INPUT}">${escapeHtml(surveyAnswers[q.id] || "")}</textarea>`,
+          footer: optionalSkip() + nextButton()
+        });
+      }
+
+      // 5) Comment + name
+      if (key === "comment") {
+        return shell({
+          title: labels.commentTitle,
+          hint: "Tell us what you loved or what we can improve.",
+          body: `
+            <div class="space-y-4">
+              <div>
+                <label for="commentInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Your review</label>
+                <textarea id="commentInput" data-field="customerComment" rows="5" maxlength="2000" placeholder="Favorite dishes, service, ambiance..." class="${INPUT}">${escapeHtml(customerComment)}</textarea>
+              </div>
+              <div>
+                <label for="nameInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Your name <span class="normal-case font-normal text-gray-400">(optional)</span></label>
+                <input id="nameInput" data-field="customerName" type="text" maxlength="100" placeholder="e.g., Bea Alonzo" value="${escapeHtml(customerName)}" class="${INPUT}">
+              </div>
+            </div>`,
+          footer: nextButton()
+        });
+      }
+
+      // 6) Staff pick
+      if (key === "staff") {
+        const list = branchEmployees();
+        const body = list.length
+          ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">${list.map((e, i) => `
+              <button type="button" data-action="pick-staff" data-index="${i}" class="${e.name === selectedStaffMember ? OPTION_ACTIVE : OPTION_IDLE}">
+                ${employeeAvatarHtml(e, "w-10 h-10", "text-[13px]")}
+                <span class="min-w-0">
+                  <span class="block truncate">${escapeHtml(e.name)}</span>
+                  <span class="block text-[12px] font-normal text-gray-500">${escapeHtml(e.position || "Staff Member")}</span>
+                </span>
+              </button>`).join("")}</div>`
+          : `<div class="p-5 bg-gray-50 border border-gray-200 rounded-[8px] text-[14px] text-gray-600 text-center">No staff are listed for this branch yet.</div>`;
+        return shell({
+          title: labels.staffTitle,
+          hint: "Tap the staff member who served you.",
+          body,
+          footer: list.length
+            ? `<button type="button" data-action="skip-staff" class="text-[13px] font-medium text-gray-500 hover:text-gray-900 transition-colors py-2">${renderingLast ? "I don't remember & submit" : "I don't remember"}</button>${selectedStaffMember ? nextButton() : ""}`
+            : nextButton()
+        });
+      }
+
+      // 7) Staff rating (only when a staff member was picked)
+      if (key === "staff-rate") {
+        return shell({
+          eyebrow: selectedStaffMember,
+          title: `How would you rate ${selectedStaffMember}'s service?`,
+          hint: "Optional.",
+          body: `
+            <div class="flex flex-col items-center">
+              <div class="mb-5">${employeeAvatarHtml(branchEmployees().find(e => e.name === selectedStaffMember) || { name: selectedStaffMember }, "w-20 h-20", "text-2xl")}</div>
+              ${stars(staffRating, "staff")}
+            </div>`,
+          footer: optionalSkip() + (staffRating ? nextButton() : "")
+        });
+      }
+
+      return "";
+    }
+
+    // Thank-you screen: no ratings summary, no "submit another review".
+    // Before the email is sent it shows the voucher box; afterwards only the thank-you message.
+    function renderDone() {
+      const c = voucherCard;
+      const email = `<strong class="text-gray-900 break-all">${escapeHtml(c.email)}</strong>`;
+      const afterEmail = {
+        sending: `Sending your ${VOUCHER_PERCENT}% voucher to ${email}…`,
+        sent: `Your ${VOUCHER_PERCENT}% voucher has been sent to ${email}. Show that email to staff on your next visit. Check your spam folder if you don't see it.`,
+        duplicate: `${email} has already received a voucher (one per email). Please check your inbox for the earlier email.`,
+        failed: `Your voucher is saved, but the email didn't send. Show this screen to staff on your next visit. They can find it by your email: ${email}.`,
+        closed: `Your review has been sent to Jiang Nan Hotpot management.`
+      }[c.stage];
+      return `
+        <div class="flex-1 flex flex-col items-center justify-center text-center py-6">
+          <div class="w-16 h-16 rounded-full bg-tvRed text-white flex items-center justify-center shadow-sm">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>
+          </div>
+          <h1 class="text-[26px] font-bold text-gray-900 mt-5">Thank you for your feedback!</h1>
+          ${afterEmail
+            ? `<p class="text-[14px] text-gray-600 mt-3 max-w-sm leading-relaxed">${afterEmail}</p>`
+            : `<p class="text-[13px] text-gray-500 mt-1.5">Your review has been sent to Jiang Nan Hotpot management.</p>
+               ${renderVoucherCard()}`}
+        </div>`;
+    }
+
+    // Voucher email box on the thank-you screen (the review is already saved at this point)
+    function renderVoucherCard() {
+      const c = voucherCard;
+      const body = {
+        form: `<p class="text-[15px] font-bold text-gray-900">Get ${VOUCHER_PERCENT}% off your next visit</p>
+               <p class="text-[13px] text-gray-600 mt-1">Enter your email to get your voucher. One voucher per email.</p>
+               <div class="flex flex-col sm:flex-row gap-2 mt-3">
+                 <input id="voucherEmailInput" type="email" data-field="voucherEmail" value="${escapeHtml(voucherEmailInput)}" placeholder="you@example.com" autocomplete="email" maxlength="254" class="${INPUT} flex-1 min-w-0">
+                 <button type="button" data-action="send-voucher" class="px-4 py-2.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white font-semibold text-[13px] transition-colors shadow-sm shrink-0">Send my voucher</button>
+               </div>
+               ${c.error ? `<p data-voucher-error class="text-[12px] font-medium text-tvRed mt-2">${escapeHtml(c.error)}</p>` : ""}
+               <p class="text-[11.5px] text-gray-500 mt-2.5">Your review is already saved. The voucher is optional.</p>`
+      }[c.stage];
+      if (!body) return "";
+      return `
+        <div class="w-full max-w-sm mt-5 text-left border-2 border-dashed border-tvRed/60 rounded-[10px] p-4 bg-red-50/30">
+          <div class="text-[11px] font-semibold tracking-[0.06em] uppercase text-tvRed mb-1">Thank-you voucher</div>
+          ${body}
+        </div>`;
+    }
+
+    // "Send my voucher" on the thank-you card
+    function sendVoucherFromCard() {
+      if (voucherCard.stage !== "form") return;
+      const email = voucherEmailInput.trim().toLowerCase();
+      if (!EMAIL_RE.test(email)) {
+        voucherCard = { stage: "form", email, error: "Please enter a valid email address." };
+        render();
+        const input = document.getElementById("voucherEmailInput");
+        if (input) input.focus();
+        return;
+      }
+      if (PREVIEW) {
+        voucherCard = { stage: "form", email, error: "Preview only: no voucher is created or emailed." };
+        return render();
+      }
+      if (!VOUCHER_ENABLED) {
+        console.warn("Voucher not sent: add your EmailJS keys in js/firebase-config.js (EMAILJS_PUBLIC_KEY, EMAILJS_SERVICE_ID, EMAILJS_VOUCHER_TEMPLATE_ID).");
+        voucherCard = { stage: "form", email, error: "Voucher emails aren't set up yet. Please ask a staff member." };
+        return render();
+      }
+      storageSet(VOUCHER_EMAIL_KEY, email); // prefill next time
+      issueVoucher(email, lastSummary.surveyId, lastSummary.branchId, lastSummary.branch, lastSummary.name);
+    }
+
+    // Create the voucher (one per email, enforced by the Firestore rules) and email the code
+    async function issueVoucher(email, surveyId, branchId, branchNameText, customerNameText) {
+      voucherCard = { stage: "sending", email };
+      render();
+      const code = makeVoucherCode();
+      try {
+        await db.collection("vouchers").doc(email).set({
+          code,
+          email,
+          surveyId,
+          branchId,
+          discountPercent: VOUCHER_PERCENT,
+          status: "active",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (err) {
+        console.warn("Voucher not created:", err.code, err.message);
+        if (err.code === "permission-denied") {
+          // the expected refusal: this email already has a voucher (doc exists → not a create)
+          voucherCard = { stage: "duplicate", email };
+        } else {
+          voucherCard = { stage: "form", email, error: "The voucher couldn't be created right now. Please try again." }; // nothing was created
+        }
+        saveDoneState();
+        return render();
+      }
+      try {
+        const now = new Date();
+        const validFrom = formatVoucherDate(now);
+        const validUntil = formatVoucherDate(addOneMonth(now));
+        const firstName = (customerNameText || "").trim() || "there";
+        const redeemUrl = new URL(VOUCHER_PAGE, location.href);
+        redeemUrl.search = new URLSearchParams({ c: code, n: firstName, f: validFrom, u: validUntil }).toString();
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_VOUCHER_TEMPLATE_ID, {
+          to_email: email,
+          customer_name: firstName,
+          voucher_code: code,
+          discount: VOUCHER_PERCENT + "%",
+          valid_from: validFrom,
+          valid_until: validUntil,
+          expires: validUntil, // kept for older templates
+          logo_url: new URL(LOGO_PATH, location.href).href,
+          redeem_url: redeemUrl.href,
+          branch_name: branchNameText || ""
+        });
+        voucherCard = { stage: "sent", email };
+      } catch (err) {
+        console.warn("Voucher email failed:", err && (err.text || err.message || err));
+        voucherCard = { stage: "failed", email };
+      }
+      saveDoneState();
+      render();
+    }
+
+    function render() {
+      const backBtn = document.getElementById("backBtn");
+      const counter = document.getElementById("stepCounter");
+      const bar = document.getElementById("surveyProgressBar");
+
+      if (finished) {
+        stepHost.innerHTML = renderDone();
+        backBtn.classList.add("invisible");
+        counter.textContent = "";
+        bar.style.width = "100%";
+        return;
+      }
+
+      const steps = getSteps();
+      if (!steps.includes(currentKey)) currentKey = steps[0];
+      const i = steps.indexOf(currentKey);
+
+      if (currentKey !== renderedKey) {
+        // A new question just appeared: ignore taps briefly so a quick double-tap
+        // on the previous question can't accidentally answer this one
+        readyAt = Date.now() + 300;
+        renderedKey = currentKey;
+      }
+      renderingLast = i === steps.length - 1;
+      stepHost.innerHTML = renderStep(currentKey);
+      renderingLast = false;
+      backBtn.classList.toggle("invisible", i === 0);
+      counter.textContent = `Question ${i + 1} of ${steps.length}`;
+      bar.style.width = `${(i / steps.length) * 100}%`;
+    }
+
+    // ---------- Interaction (one delegated handler for every question) ----------
+    stepHost.addEventListener("click", e => {
+      const btn = e.target.closest("[data-action]");
+      if (!btn || btn.disabled || advancing || transitioning || Date.now() < readyAt) return;
+      const a = btn.dataset.action;
+
+      if (a === "next") return next();
+      if (a === "submit") return submitFinalSurvey();
+      if (a === "restart") return resetSurvey();
+      if (a === "send-voucher") return sendVoucherFromCard();
+      if (a === "voucher-change-email") {
+        voucherEmailInput = "";
+        voucherCard = { stage: "form", email: "", error: "" };
+        render();
+        const input = document.getElementById("voucherEmailInput");
+        if (input) input.focus();
+        return;
+      }
+
+      if (a === "pick-branch") {
+        if (btn.dataset.id !== selectedBranchId) {
+          selectedBranchId = btn.dataset.id;
+          selectedStaffMember = "";   // staff belong to a branch
+          staffRating = 0;
+        }
+        render();
+        return autoAdvance();
+      }
+
+      if (a === "rate") {
+        const key = btn.dataset.key;
+        const val = Number(btn.dataset.value);
+        if (key === "atmoOpen") { atmosphereOpenStar = val; return render(); } // has a text box, no auto-advance
+        if (key.startsWith("cat:")) {
+          // Rating screen: stay until every category has stars, then move on by itself
+          const wasComplete = canAdvance("ratings");
+          ratingValues[key.slice(4)] = val;
+          render();
+          if (!wasComplete && canAdvance("ratings")) return autoAdvance();
+          return;
+        }
+        if (key === "staff") staffRating = val;
+        render();
+        return autoAdvance();
+      }
+
+      if (a === "choice") {
+        const q = loadedQuestions.find(x => x.id === btn.dataset.qid);
+        if (!q) return;
+        surveyAnswers[q.id] = q.choices[Number(btn.dataset.index)];
+        render();
+        return autoAdvance();
+      }
+
+      if (a === "pick-staff") {
+        const emp = branchEmployees()[Number(btn.dataset.index)];
+        if (!emp) return;
+        if (emp.name !== selectedStaffMember) staffRating = 0;
+        selectedStaffMember = emp.name;
+        render();
+        return autoAdvance();
+      }
+
+      if (a === "skip-staff") {
+        selectedStaffMember = "";
+        staffRating = 0;
+        return isLastStep(currentKey) ? submitFinalSurvey() : next();
+      }
+    });
+
+    // Text answers are saved as the customer types (re-renders keep them)
+    stepHost.addEventListener("input", e => {
+      const f = e.target.dataset.field;
+      if (f === "atmosphereOpenText") atmosphereOpenText = e.target.value;
+      if (f === "customerComment") customerComment = e.target.value;
+      if (f === "customerName") customerName = e.target.value;
+      if (f === "answer") surveyAnswers[e.target.dataset.qid] = e.target.value;
+      if (f === "voucherEmail") {
+        voucherEmailInput = e.target.value;
+        if (voucherCard.error) { // clear the old message without re-rendering (keeps the cursor in the box)
+          voucherCard.error = "";
+          const errEl = stepHost.querySelector("[data-voucher-error]");
+          if (errEl) errEl.remove();
+        }
+      }
+    });
+
+    // Enter in the voucher email box = Send
+    stepHost.addEventListener("keydown", e => {
+      if (e.key === "Enter" && e.target.dataset && e.target.dataset.field === "voucherEmail") {
+        e.preventDefault();
+        sendVoucherFromCard();
+      }
+    });
+
+    document.getElementById("backBtn").addEventListener("click", back);
+
+    // ---------- Live data hooks ----------
+    // Rating categories changed on the dashboard (live): drop answers for removed categories, redraw
+    window.onRatingConfigChanged = () => {
+      const ids = new Set(ratingConfig.categories.map(c => c.id));
+      Object.keys(ratingValues).forEach(id => { if (!ids.has(id)) delete ratingValues[id]; });
+      if (!finished) render();
+    };
+
+    window.onBranchesChanged = () => {
+      const active = activeBranches();
+      // Arrived from a branch QR code: preselect it and skip the branch question
+      if (!skipBranchStep && active.some(b => b.id === requestedBranchId) && currentKey === "branch" && !finished) {
+        skipBranchStep = true;
+        selectedBranchId = requestedBranchId;
+      }
+      if (selectedBranchId && !active.some(b => b.id === selectedBranchId)) {
+        selectedBranchId = "";
+        skipBranchStep = false;
+        if (!finished) currentKey = "branch";
+      }
+      if (!finished) render();
+    };
+
+    // Called by js/employees.js when staff change
+    function renderStaffList() {
+      if (!finished && currentKey === "staff") render();
+    }
+
+    // ---------- Submit ----------
+    async function submitFinalSurvey() {
+      if (isSubmitting) return;
+      const steps = getSteps();
+      const missing = steps.find(k => !canAdvance(k));
+      if (missing) {
+        showToast("Please answer this question first.");
+        return transitionTo(missing);
+      }
+
+      const branchObj = branches.find(b => b.id === selectedBranchId);
+      // Only the categories currently on the survey (keys = category ids, e.g. ratings.overall)
+      const ratings = {};
+      ratingConfig.categories.forEach(c => { ratings[c.id] = ratingValues[c.id]; });
+      if (selectedStaffMember && staffRating > 0) ratings.staffService = staffRating;
+
+      if (PREVIEW) {
+        // Show what customers see after submitting, without saving anything
+        lastSummary = { branch: branchObj ? branchObj.name : "", branchId: selectedBranchId, surveyId: "preview", rating: ratings.overall, staff: selectedStaffMember, at: Date.now() };
+        voucherCard = { stage: "form", email: "", error: "" };
+        finished = true;
+        transitionTo(currentKey);
+        return;
+      }
+
+      isSubmitting = true;
+      const submitBtn = stepHost.querySelector('[data-action="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        const surveyRef = await db.collection("surveys").add({
+          branchId: selectedBranchId,
+          branchName: branchObj ? branchObj.name : selectedBranchId,
+          customerName: customerName.trim() || "Anonymous",
+          comment: customerComment.trim(),
+          ratings,
+          atmosphereOpen: { rating: atmosphereOpenStar, comment: atmosphereOpenText.trim() },
+          answers: surveyAnswers,
+          staffMember: selectedStaffMember || "",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        lastSummary = {
+          branch: branchObj ? branchObj.name : selectedBranchId,
+          branchId: selectedBranchId,
+          surveyId: surveyRef.id, // the voucher must point at a real, submitted survey
+          rating: ratings.overall,
+          staff: selectedStaffMember,
+          name: customerName.trim(), // greeting in the voucher email
+          at: Date.now()
+        };
+        // Review is saved. The thank-you screen now offers the (optional) voucher.
+        voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
+        voucherCard = { stage: "form", email: "", error: "" };
+        finished = true;
+        saveDoneState(); // a refresh now shows this thank-you screen, not a new survey
+        transitionTo(currentKey);
+      } catch (error) {
+        console.error("Error saving survey:", error);
+        showToast("Failed to save survey. Please try again.");
+        if (submitBtn) submitBtn.disabled = false;
+      } finally {
+        isSubmitting = false;
+      }
+    }
+
+    async function resetSurvey() {
+      ratingValues = {};
+      atmosphereOpenStar = 0;
+      atmosphereOpenText = "";
+      customerName = "";
+      customerComment = "";
+      selectedStaffMember = "";
+      staffRating = 0;
+      voucherCard = { stage: "none", email: "" };
+      voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
+      if (!skipBranchStep) selectedBranchId = "";
+      await loadSurveyQuestions();
+      finished = false;
+      transitionTo(getSteps()[0]);
+    }
+
+    // ---------- Custom questions from Firestore ----------
+    async function loadSurveyQuestions() {
+      surveyAnswers = {};
+      try {
+        const snapshot = await db.collection("surveyQuestions").orderBy("order", "asc").get();
+        loadedQuestions = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(q => q.visible !== false); // hidden on the dashboard → not asked
+      } catch (error) {
+        console.error("Error loading survey questions:", error);
+        loadedQuestions = [];
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      if (PREVIEW) {
+        // Live questions: every add / edit / delete / reorder / show-hide on the dashboard re-renders the phone
+        render();
+        db.collection("surveyQuestions").orderBy("order", "asc").onSnapshot(snapshot => {
+          loadedQuestions = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(q => q.visible !== false);
+          render();
+        }, error => console.error("Preview: error listening to survey questions:", error));
+        return;
+      }
+      if (restoreDoneState()) return render(); // already submitted on this device → stay on the thank-you screen
+      render();
+      await loadSurveyQuestions();
+      render(); // counter now includes the custom questions
+    });
+
+    // Preview mode: the dashboard can jump the phone to a question (e.g. "q:<id>" or "ratings")
+    window.previewGoTo = key => {
+      if (!PREVIEW) return false;
+      if (!getSteps().includes(key)) return false;
+      finished = false;
+      transitionTo(key);
+      return true;
+    };
+
+    // ---------- Label editor (display only, this device) ----------
+    const LABEL_INPUTS = {
+      editBranchTitle: "branchTitle",
+      editCommentTitle: "commentTitle", editStaffTitle: "staffTitle"
+    };
+
+    function openAdminModal() {
+      Object.entries(LABEL_INPUTS).forEach(([id, key]) => { document.getElementById(id).value = labels[key]; });
+      document.getElementById("adminModalBackdrop").classList.remove("hidden");
+      document.getElementById("adminModalBackdrop").classList.add("flex");
+    }
+
+    function closeAdminModal() {
+      document.getElementById("adminModalBackdrop").classList.add("hidden");
+      document.getElementById("adminModalBackdrop").classList.remove("flex");
+    }
+
+    document.getElementById("adminModalBackdrop").addEventListener("click", e => {
+      if (e.target.id === "adminModalBackdrop") closeAdminModal();
+    });
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape") closeAdminModal();
+    });
+
+    function saveAdminQuestions() {
+      Object.entries(LABEL_INPUTS).forEach(([id, key]) => {
+        const v = document.getElementById(id).value.trim();
+        if (v) labels[key] = v;
+      });
+      closeAdminModal();
+      render();
+      showToast("Survey labels updated.");
+    }
+
+    let surveyToastTimer;
+    function showToast(msg) {
+      const toast = document.getElementById("surveyToast");
+      document.getElementById("surveyToastMessage").textContent = msg;
+      toast.classList.remove("translate-y-3", "opacity-0");
+      clearTimeout(surveyToastTimer);
+      surveyToastTimer = setTimeout(() => toast.classList.add("translate-y-3", "opacity-0"), 3000);
+    }
+  </script>
+</body>
+</html>

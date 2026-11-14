@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jiang Nan Hotpot — Dashboard</title>
+  <link rel="icon" type="image/png" href="images/jiangnan-logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+          colors: {
+            tvDark: '#141414',
+            tvDarkHover: '#222222',
+            tvRed: '#c8102e',
+            tvRedHover: '#a70d26',
+            tvBg: '#f3f4f6',
+            tvBar: '#b3b3b3',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* "clip" stops sideways scrolling without breaking position: sticky ("hidden" breaks it);
+       "hidden" stays as the fallback for browsers that don't know "clip" */
+    html, body { overflow-x: hidden; overflow-x: clip; max-width: 100%; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    /* "View / Hide full response" toggle on review cards */
+    details[data-full] > summary { list-style: none; }
+    details[data-full] > summary::-webkit-details-marker { display: none; }
+    details[data-full] .when-open { display: none; }
+    details[data-full][open] .when-open { display: inline; }
+    details[data-full][open] .when-closed { display: none; }
+  </style>
+  <script>
+    // Show script failures on the login screen instead of failing silently.
+    window.addEventListener("error", function (e) {
+      var t = e.target;
+      var isScriptLoad = t && t.tagName === "SCRIPT" && t.src;
+      if (!isScriptLoad && !e.error && !e.message) return; // ignore images etc.
+      var msg = isScriptLoad ? "Couldn't load " + t.src.split("/").pop() : e.message;
+      function show() {
+        var o = document.getElementById("loginOverlay"), el = document.getElementById("loginError");
+        if (!o || !el || o.classList.contains("hidden")) return;
+        el.textContent = "Page error: " + msg + " — press Ctrl+F5 to reload the page.";
+        el.classList.remove("hidden");
+      }
+      document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", show) : show();
+    }, true);
+  </script>
+  <!-- ?v= forces browsers to fetch the current files; bump it whenever these change -->
+  <script src="js/firebase-config.js?v=20261114k"></script>
+  <script src="js/branches.js?v=20261114k"></script>
+  <script src="js/employees.js?v=20261114k"></script>
+  <script src="js/ratingConfig.js?v=20261114k"></script>
+  <script src="js/surveyQuestions.js?v=20261114k"></script>
+  <script src="js/dashboard.js?v=20261114k"></script>
+  <script src="js/vouchers.js?v=20261114k"></script>
+  <script src="js/reviewsInsights.js?v=20261114k"></script>
+</head>
+<body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
+
+  <!-- Sign-in Overlay (dashboard data requires an authenticated admin) -->
+  <div id="loginOverlay" class="fixed inset-0 bg-tvBg z-[60] flex items-center justify-center p-4">
+    <div class="w-full max-w-sm">
+      <div class="flex items-center justify-center gap-3 mb-6">
+        <img src="images/jiangnan-logo.png" alt="Jiang Nan Hotpot" class="h-[48px] w-[48px] object-contain">
+        <span class="font-bold text-[18px] tracking-[0.02em] text-gray-900">Jiang Nan Hotpot</span>
+      </div>
+      <!-- action/onsubmit stop the browser from ever reloading the page on Sign in, even if a script failed -->
+      <form id="loginForm" action="javascript:void(0)" onsubmit="return false" class="bg-white border border-gray-200 rounded-[10px] p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] space-y-4">
+        <div>
+          <h1 class="text-lg font-bold text-gray-900">Administrator sign in</h1>
+          <p class="text-[13px] text-gray-500 mt-1">Sign in to view reviews and manage your branches.</p>
+        </div>
+        <div>
+          <label for="loginEmail" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Email</label>
+          <input id="loginEmail" type="email" required autocomplete="username" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="loginPassword" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Password</label>
+          <input id="loginPassword" type="password" required autocomplete="current-password" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+          <div class="text-right mt-1.5">
+            <button id="forgotPasswordBtn" type="button" class="text-[12px] font-semibold text-tvRed hover:underline">Forgot password?</button>
+          </div>
+        </div>
+        <p id="loginInfo" class="hidden text-[12px] font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-[6px] p-2.5"></p>
+        <div id="recaptchaBox" class="flex justify-center min-h-[78px]"></div>
+        <p id="recaptchaMissing" class="hidden text-[11px] text-gray-400 text-center">CAPTCHA not configured — set RECAPTCHA_V2_SITE_KEY in js/firebase-config.js.</p>
+        <p id="loginError" class="hidden text-[12px] font-medium text-tvRed"></p>
+        <button id="loginSubmitBtn" type="submit" class="w-full bg-tvRed hover:bg-tvRedHover text-white font-semibold text-[13px] px-4 py-2.5 rounded-[6px] transition-colors shadow-sm cursor-pointer disabled:opacity-60">
+          Sign in
+        </button>
+      </form>
+
+      <!-- Shown when sign-in worked but the account isn't in the admins list yet -->
+      <div id="notAdminPanel" class="hidden bg-white border border-gray-200 rounded-[10px] p-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)] space-y-4">
+        <div>
+          <h1 class="text-lg font-bold text-gray-900">Almost there</h1>
+          <p class="text-[13px] text-gray-500 mt-1">Signed in as <strong id="notAdminEmail" class="text-gray-900"></strong>.</p>
+        </div>
+        <p id="notAdminMessage" class="text-[13px] text-gray-700"></p>
+        <div id="notAdminUidBlock">
+          <label for="notAdminUid" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Document ID (your UID)</label>
+          <div class="flex gap-2">
+            <input id="notAdminUid" type="text" readonly class="flex-1 min-w-0 px-3 py-2 text-[12px] font-mono text-gray-800 border border-gray-300 rounded-[6px] bg-gray-50" />
+            <button id="copyUidBtn" type="button" class="px-3 py-2 text-[12px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors shrink-0">Copy</button>
+          </div>
+          <p class="text-[11.5px] text-gray-500 mt-2">Add any field to the document, e.g. <code>email</code> = your email, then click <strong>Check again</strong>.</p>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-1">
+          <button id="notAdminSignOutBtn" type="button" class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Sign out</button>
+          <button id="recheckAdminBtn" type="button" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors disabled:opacity-60">Check again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Header Bar (white, so the logo shows in its real colors) -->
+  <header class="h-[58px] bg-white text-gray-900 flex items-center justify-between px-4 sm:px-6 border-b border-gray-200 sticky top-0 z-30">
+    <div class="flex items-center gap-3">
+      <button id="mobileMenuBtn" type="button" aria-label="Toggle Navigation" class="md:hidden p-2 -ml-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+      <a href="#dashboard" data-nav-link="dashboard" class="flex items-center gap-3 group">
+        <img src="images/jiangnan-logo.png" alt="Jiang Nan Hotpot" class="h-[38px] w-[38px] object-contain">
+        <span class="font-bold text-[16px] tracking-[0.02em] text-gray-900 group-hover:text-tvRed transition-colors">Jiang Nan Hotpot</span>
+      </a>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <div class="hidden sm:block text-right">
+        <div class="text-[12.5px] font-medium tracking-[0.05em] text-gray-700">ADMINISTRATOR</div>
+        <div id="userEmailLabel" class="text-[11px] text-gray-500"></div>
+      </div>
+      <button id="signOutBtn" type="button" class="text-[12px] font-semibold text-gray-600 hover:text-gray-900 border border-gray-300 hover:border-gray-400 rounded-[6px] px-3 py-1.5 transition-colors">
+        Sign out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main App Body -->
+  <div class="flex flex-1 relative">
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-20 hidden md:hidden"></div>
+
+    <!-- Left Dark Sidebar -->
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 top-[58px] md:top-0 w-[215px] bg-tvDark text-gray-400 flex flex-col justify-between py-5 z-20 transform -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out shrink-0">
+      <div class="flex flex-col">
+        <div>
+          <div class="text-[10.5px] font-bold tracking-[0.06em] text-neutral-500 px-5 pb-2.5 uppercase">Workspace</div>
+          <ul class="space-y-0.5">
+            <li>
+              <button type="button" data-nav="dashboard" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-semibold text-white bg-transparent hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect>
+                </svg>
+                <span>Dashboard</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="reviews" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                </svg>
+                <span>Reviews</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="vouchers" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 1 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1z"></path><line x1="9" y1="9" x2="15" y2="15"></line><circle cx="9.5" cy="14.5" r=".5"></circle><circle cx="14.5" cy="9.5" r=".5"></circle>
+                </svg>
+                <span>Vouchers</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="mt-9">
+          <div class="text-[10.5px] font-bold tracking-[0.06em] text-neutral-500 px-5 pb-2.5 uppercase">Management</div>
+          <ul class="space-y-0.5">
+            <li>
+              <button type="button" data-nav="branches" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                <span>Branches</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="employees" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                <span>Employees</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="surveyQuestions" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="13" y2="16"></line>
+                </svg>
+                <span>Survey Questions</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 min-w-0 p-5 sm:p-7 lg:px-9 lg:py-7 max-w-[1400px] w-full">
+      <!-- Page Header (shared by all views) -->
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <h1 id="pageTitle" class="text-[26px] font-bold text-gray-900 leading-tight">Dashboard</h1>
+            <span id="activeBranchBadge" class="text-xs font-medium text-gray-600 bg-white border border-gray-200 px-3 py-1 rounded-full">
+              <span class="font-bold text-tvRed">All Branches</span>
+            </span>
+          </div>
+          <p id="pageSubtitle" class="text-[13px] text-gray-500 mt-1">Ratings, sentiment and performance across your restaurant locations</p>
+        </div>
+        <button id="primaryActionBtn" type="button" class="self-start sm:self-auto shrink-0 bg-tvRed hover:bg-tvRedHover active:translate-y-px text-white font-semibold text-[13px] px-4 py-2.5 rounded-[6px] inline-flex items-center gap-1.5 transition-all shadow-sm cursor-pointer">
+          <span id="primaryActionLabel">+ Add Review</span>
+        </button>
+      </div>
+
+      <!-- Filter Toolbar (Dashboard + Reviews) -->
+      <div id="filterToolbar" class="mb-5 bg-white border border-gray-200 rounded-[10px] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div class="flex items-center gap-2 px-1">
+          <span class="w-2.5 h-2.5 rounded-full bg-tvRed shrink-0"></span>
+          <label for="branchSelect" class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase shrink-0">Branch</label>
+          <select id="branchSelect" class="text-[13px] font-semibold text-gray-900 bg-white border border-gray-300 rounded-[6px] px-2.5 py-1.5 focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed cursor-pointer min-w-0">
+            <option value="All">All Branches (Network Wide)</option>
+          </select>
+        </div>
+        <div id="periodWrap" class="hidden flex items-center gap-2 px-1">
+          <label for="periodSelect" class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase shrink-0">Period</label>
+          <select id="periodSelect" class="text-[13px] font-semibold text-gray-900 bg-white border border-gray-300 rounded-[6px] px-2.5 py-1.5 focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed cursor-pointer">
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="0">All time</option>
+          </select>
+        </div>
+        <div id="searchWrap" class="relative flex-1 hidden">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+          </div>
+          <input type="text" id="searchInput" placeholder="Search reviews, dishes, or customer names..." class="w-full pl-9 pr-8 py-1.5 text-[13px] border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+          <button id="clearSearchBtn" type="button" class="hidden absolute inset-y-0 right-0 pr-2.5 flex items-center text-gray-400 hover:text-gray-700" aria-label="Clear search">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- ===== DASHBOARD VIEW ===== -->
+      <section id="dashboardView">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-[18px] mb-[18px]">
+          <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+            <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">Total Reviews</div>
+            <div id="kpiTotalReviews" class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5">0</div>
+            <div class="text-[12px] font-medium text-tvRed">Customer survey responses</div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+            <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">Average Rating</div>
+            <div class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5"><span id="kpiAvgRating">—</span> / 5</div>
+            <div class="text-[12px] font-medium text-tvRed">Overall experience score</div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+            <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">Net Sentiment</div>
+            <div id="kpiSentiment" class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5">—</div>
+            <div class="text-[12px] font-medium text-tvRed">Rated 4 ★ or higher</div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+            <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">Active Branches</div>
+            <div id="kpiActiveBranches" class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5">0</div>
+            <div class="text-[12px] font-medium text-tvRed">Branches with feedback</div>
+          </div>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-[10px] px-6 pt-5 pb-6 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-5">
+            <h2 class="text-[16px] font-bold text-gray-900">Branch Performance Directory</h2>
+            <div id="branchCountLabel" class="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1 rounded-full">Showing 8 locations</div>
+          </div>
+          <div id="branchGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[18px]"></div>
+        </div>
+      </section>
+
+      <!-- ===== REVIEWS VIEW ===== -->
+      <section id="reviewsView" class="hidden">
+        <!-- One topic at a time: small tabs under the shared filter bar -->
+        <div id="reviewsTabs" role="tablist" aria-label="Review views" class="flex gap-1 overflow-x-auto border-b border-gray-200 mb-5 -mx-1 px-1">
+          <button type="button" role="tab" data-rtab="overview" class="shrink-0 px-3.5 py-2.5 text-[13px] font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-900 transition-colors -mb-px">Overview</button>
+          <button type="button" role="tab" data-rtab="branches" class="shrink-0 px-3.5 py-2.5 text-[13px] font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-900 transition-colors -mb-px">Branches</button>
+          <button type="button" role="tab" data-rtab="suggestions" class="shrink-0 px-3.5 py-2.5 text-[13px] font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-900 transition-colors -mb-px">Suggestions</button>
+          <button type="button" role="tab" data-rtab="staff" class="shrink-0 px-3.5 py-2.5 text-[13px] font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-900 transition-colors -mb-px">Staff</button>
+          <button type="button" role="tab" data-rtab="questions" class="shrink-0 px-3.5 py-2.5 text-[13px] font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-900 transition-colors -mb-px">Your questions</button>
+          <button type="button" role="tab" data-rtab="all" class="shrink-0 px-3.5 py-2.5 text-[13px] font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-900 transition-colors -mb-px">All reviews</button>
+        </div>
+        <div id="rtab-overview"></div>
+        <div id="rtab-branches" class="hidden"></div>
+        <div id="rtab-suggestions" class="hidden"></div>
+        <div id="rtab-staff" class="hidden"></div>
+        <div id="rtab-questions" class="hidden"></div>
+        <div id="rtab-all" class="hidden">
+        <div class="flex flex-wrap items-center gap-2 mb-4">
+          <div class="flex items-center gap-1 bg-white border border-gray-200 p-1 rounded-[8px]">
+            <button type="button" data-star="All" class="star-filter-btn px-3 py-1 rounded-[6px] text-xs font-semibold">All Stars</button>
+            <button type="button" data-star="5" class="star-filter-btn px-3 py-1 rounded-[6px] text-xs font-semibold">5 ★</button>
+            <button type="button" data-star="4" class="star-filter-btn px-3 py-1 rounded-[6px] text-xs font-semibold">4 ★</button>
+            <button type="button" data-star="3" class="star-filter-btn px-3 py-1 rounded-[6px] text-xs font-semibold">≤ 3 ★</button>
+          </div>
+          <select id="sentimentFilterSelect" class="bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-[8px] px-3 py-2 focus:outline-none focus:border-tvRed cursor-pointer">
+            <option value="All">All Sentiments</option>
+            <option value="Positive">Positive</option>
+            <option value="Neutral">Neutral</option>
+            <option value="Needs Attention">Needs Attention</option>
+            <option value="Unrated">Unrated</option>
+          </select>
+          <select id="staffFilterSelect" class="bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-[8px] px-3 py-2 focus:outline-none focus:border-tvRed cursor-pointer">
+            <option value="All">All Staff</option>
+          </select>
+        </div>
+
+        <div id="allReviewsFeed" class="space-y-[14px]"></div>
+
+        <div id="emptyReviewsState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
+          <h3 class="text-[15px] font-bold text-gray-900">No reviews found matching your criteria</h3>
+          <p class="text-[12px] text-gray-500 mt-1">Try resetting your star, sentiment or staff filters.</p>
+          <button id="resetFiltersBtn" type="button" class="mt-4 px-4 py-2 bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold rounded-[6px] transition-colors">Clear Filters</button>
+        </div>
+        </div><!-- /rtab-all -->
+      </section>
+
+      <!-- ===== EMPLOYEES VIEW ===== -->
+      <section id="employeesView" class="hidden">
+        <p id="employeesSummary" class="text-[12px] text-gray-500 mb-3"></p>
+        <div id="employeesList" class="space-y-[10px]"></div>
+        <div id="emptyEmployeesState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
+          <h3 id="emptyEmployeesTitle" class="text-[15px] font-bold text-gray-900">No employees found</h3>
+          <p id="emptyEmployeesText" class="text-[12px] text-gray-500 mt-1">Add your first employee to get started.</p>
+        </div>
+      </section>
+
+      <!-- ===== SURVEY QUESTIONS VIEW ===== -->
+      <section id="vouchersView" class="hidden">
+        <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 mb-[18px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <h2 class="text-[16px] font-bold text-gray-900">Redeem a voucher</h2>
+          <p class="text-[12px] text-gray-500 mt-0.5">Type the voucher code or the customer&#39;s email. Before redeeming, ask to see the voucher email on their phone. Each voucher works once, within 30 days.</p>
+          <form id="voucherLookupForm" action="javascript:void(0)" class="mt-4 flex flex-col sm:flex-row gap-2">
+            <input id="voucherCodeInput" type="text" maxlength="254" autocomplete="off" spellcheck="false" placeholder="Code (e.g. K7M2QX9P) or email" class="flex-1 min-w-0 px-3.5 py-2.5 text-[15px] font-mono tracking-[0.08em] border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+            <select id="voucherRedeemBranch" class="px-3 py-2.5 text-[13px] bg-white border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></select>
+            <button type="submit" class="px-5 py-2.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[13px] font-semibold transition-colors shadow-sm">Find</button>
+          </form>
+          <div id="voucherLookupResult" class="mt-4"></div>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 class="text-[16px] font-bold text-gray-900">Recent vouchers</h2>
+          <span id="vouchersSummary" class="text-xs font-medium text-gray-600 bg-white border border-gray-200 px-3 py-1 rounded-full"></span>
+        </div>
+        <div id="vouchersList" class="space-y-[10px]"></div>
+        <div id="emptyVouchersState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
+          <h3 class="text-[15px] font-bold text-gray-900">No vouchers issued yet</h3>
+          <p class="text-[12px] text-gray-500 mt-1">Customers get one after finishing the survey and verifying their email.</p>
+        </div>
+      </section>
+
+      <section id="branchesView" class="hidden">
+        <div id="branchesAdminList" class="space-y-[10px]"></div>
+        <div id="emptyBranchesState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
+          <h3 class="text-[15px] font-bold text-gray-900">No branches yet</h3>
+          <p class="text-[12px] text-gray-500 mt-1">Import your 8 existing branches (their reviews and staff stay linked), or add a new one.</p>
+          <button id="importBranchesBtn" type="button" class="mt-4 px-4 py-2 bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold rounded-[6px] transition-colors disabled:opacity-60">Import the 8 existing branches</button>
+        </div>
+      </section>
+
+      <section id="surveyQuestionsView" class="hidden">
+        <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-7 items-start">
+          <!-- Left: survey configuration -->
+          <div class="min-w-0">
+            <p id="surveyQuestionsSummary" class="text-[12px] text-gray-500 mb-3"></p>
+            <div id="surveyQuestionsList" class="space-y-[10px]"></div>
+            <div id="emptySurveyQuestionsState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
+              <h3 class="text-[15px] font-bold text-gray-900">No survey questions found</h3>
+              <p class="text-[12px] text-gray-500 mt-1">Add your first survey question to get started.</p>
+            </div>
+          </div>
+
+          <!-- Right: phone simulator — the real customer survey in preview mode (display only, nothing is saved) -->
+          <aside class="xl:sticky xl:top-[78px] w-full max-w-[340px] mx-auto xl:mx-0">
+            <div class="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h2 class="text-[15px] font-bold text-gray-900">Customer preview</h2>
+                <p class="text-[11.5px] text-gray-500 mt-0.5 flex items-center gap-1.5">
+                  <span class="w-1.5 h-1.5 rounded-full bg-tvRed"></span>Live · display only, nothing is saved
+                </p>
+              </div>
+              <button id="previewRestartBtn" type="button" class="shrink-0 px-3 py-1.5 text-[12px] font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-100 rounded-[6px] transition-colors">Restart</button>
+            </div>
+            <div id="phoneFit" class="w-full">
+              <div id="phoneScaler" class="relative overflow-hidden" style="height: 700px;">
+                <!-- Fixed "real phone" size (390 × 780 screen) scaled down to fit the column -->
+                <div id="phoneDevice" class="absolute top-0 left-0 origin-top-left rounded-[54px] bg-tvDark p-[12px] shadow-[0_20px_45px_-15px_rgba(0,0,0,0.45)] ring-1 ring-black/10" style="width: 414px; height: 860px;">
+                  <div class="relative w-[390px] h-[836px] rounded-[42px] overflow-hidden bg-tvBg">
+                    <!-- status bar + notch (decoration only) -->
+                    <div class="h-[44px] bg-tvDark text-white flex items-center justify-between px-8 text-[14px] font-semibold select-none">
+                      <span>9:41</span>
+                      <span class="absolute left-1/2 -translate-x-1/2 top-[8px] w-[120px] h-[28px] rounded-full bg-black"></span>
+                      <span class="flex items-center gap-1.5">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M2 18h3v3H2zm5-4h3v7H7zm5-4h3v11h-3zm5-5h3v16h-3z"/></svg>
+                        <svg class="w-5 h-4" viewBox="0 0 28 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="22" height="12" rx="3"/><rect x="3.5" y="3.5" width="15" height="7" rx="1.5" fill="currentColor"/><path d="M25.5 5v4"/></svg>
+                      </span>
+                    </div>
+                    <iframe id="phonePreviewFrame" title="Customer survey preview (display only)" class="block w-[390px] h-[792px] border-0 bg-tvBg" loading="lazy"></iframe>
+                    <div id="phonePreviewLoading" class="absolute inset-x-0 top-[44px] bottom-0 flex items-center justify-center text-[13px] text-gray-500 bg-tvBg">Loading preview…</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="text-[11px] text-gray-400 mt-3 text-center">Tap through it like a customer. Hidden questions don't appear. Click <strong>Preview</strong> on a question to jump to it.</p>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add Review Modal -->
+  <div id="reviewModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="reviewModalHeading">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="reviewModalHeading" class="text-lg font-bold text-gray-900">Add Branch Review</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p class="text-[13px] text-gray-500 mb-4">Record a diner review received in person or by phone.</p>
+      <form id="submitReviewForm" class="space-y-4">
+        <div>
+          <label for="modalBranchSelect" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Branch</label>
+          <select id="modalBranchSelect" required class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] bg-white focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></select>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="reviewerNameInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Customer Name</label>
+            <input type="text" id="reviewerNameInput" required maxlength="100" placeholder="e.g., Camille Reyes" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+          </div>
+          <div>
+            <label for="reviewRatingInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Rating</label>
+            <select id="reviewRatingInput" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] bg-white focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
+              <option value="5" selected>5 ★ Excellent</option>
+              <option value="4">4 ★ Great</option>
+              <option value="3">3 ★ Good</option>
+              <option value="2">2 ★ Fair</option>
+              <option value="1">1 ★ Poor</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label for="reviewDishInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Ordered Specialty / Dish</label>
+          <input type="text" id="reviewDishInput" maxlength="200" placeholder="e.g., Dual Mala & Bone Marrow Hotpot" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="reviewCommentInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Comment</label>
+          <textarea id="reviewCommentInput" rows="3" required maxlength="2000" placeholder="Food quality, service and ambiance..." class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Publish Review</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Reply Modal -->
+  <div id="replyModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="replyModalHeading">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="replyModalHeading" class="text-lg font-bold text-gray-900">Reply to Customer</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p id="replyTargetCustomer" class="text-[13px] text-gray-500 mb-4"></p>
+      <form id="replyForm" class="space-y-4">
+        <div>
+          <label for="replyMessageInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Management Response</label>
+          <textarea id="replyMessageInput" rows="4" required maxlength="1000" placeholder="Write a professional response..." class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Send Reply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Employee Modal -->
+  <div id="employeeModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="employeeModalHeading">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="employeeModalHeading" class="text-lg font-bold text-gray-900">Add New Employee</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p class="text-[13px] text-gray-500 mb-4">Create a staff profile that customers can select in the survey.</p>
+      <form id="addEmployeeForm" onsubmit="handleAddEmployee(event)" class="space-y-4">
+        <input type="hidden" id="empEditId" />
+        <!-- Profile photo (uploaded to Cloudinary when you click Save) -->
+        <div class="flex items-center gap-4">
+          <div id="empPhotoPreview" class="w-20 h-20 rounded-full bg-tvDark text-white flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0">?</div>
+          <div class="min-w-0">
+            <div class="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Profile Photo</div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <label for="empPhotoInput" class="px-3 py-1.5 text-[12px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors cursor-pointer">Choose photo</label>
+              <input id="empPhotoInput" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" />
+              <button id="empPhotoRemoveBtn" type="button" class="hidden text-[12px] font-semibold text-tvRed hover:underline">Remove photo</button>
+            </div>
+            <p class="text-[11px] text-gray-500 mt-1">JPG, PNG or WebP, up to 5 MB.</p>
+          </div>
+        </div>
+        <div>
+          <label for="empName" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Full Name</label>
+          <input type="text" id="empName" required maxlength="100" placeholder="e.g. Maria Santos" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="empPosition" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Position</label>
+          <input type="text" id="empPosition" required maxlength="100" placeholder="e.g. Shift Manager" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="empBranchId" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Branch Assignment</label>
+          <select id="empBranchId" required class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] bg-white focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
+            <option value="">Select a branch</option>
+          </select>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+          <button id="empSaveBtn" type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors disabled:opacity-60">Save Employee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add/Edit Survey Question Modal -->
+  <div id="surveyQuestionModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="sqModalTitle">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="sqModalTitle" class="text-lg font-bold text-gray-900">Add Survey Question</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p class="text-[13px] text-gray-500 mb-4">Questions appear in the customer survey form.</p>
+      <form id="surveyQuestionForm" onsubmit="handleAddSurveyQuestion(event)" class="space-y-4">
+        <input type="hidden" id="sqEditId" />
+        <div>
+          <label for="sqQuestion" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Question Text</label>
+          <input type="text" id="sqQuestion" required maxlength="300" placeholder="e.g. How was your dining experience?" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="sqType" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Question Type</label>
+          <select id="sqType" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] bg-white focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
+            <option value="multiple_choice">Multiple Choice (predefined answers)</option>
+            <option value="open_ended">Open-Ended (free text answer)</option>
+          </select>
+        </div>
+        <div id="sqChoicesContainer"></div>
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Save Question</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add/Edit Branch Modal -->
+  <div id="branchModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="branchModalTitle">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="branchModalTitle" class="text-lg font-bold text-gray-900">Add Branch</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p class="text-[13px] text-gray-500 mb-4">Active branches appear in the customer survey and the dashboard filters.</p>
+      <form id="branchForm" class="space-y-4">
+        <input type="hidden" id="branchEditId" />
+        <div>
+          <label for="branchNameInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Branch Name</label>
+          <input type="text" id="branchNameInput" required maxlength="100" placeholder="e.g. Alabang Town Center" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="branchRegionInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Region</label>
+          <input type="text" id="branchRegionInput" maxlength="100" placeholder="e.g. Metro Manila South" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="branchAddressInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Address</label>
+          <input type="text" id="branchAddressInput" maxlength="200" placeholder="e.g. Madrigal Ave., Muntinlupa" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="branchManagerInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Branch Manager</label>
+          <input type="text" id="branchManagerInput" maxlength="100" placeholder="e.g. Maria Santos" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+          <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Save Branch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Branch QR Code Modal -->
+  <div id="qrModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-sm p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-1">
+        <h3 id="qrModalTitle" class="text-lg font-bold text-gray-900">Survey QR Code</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p id="qrBranchLabel" class="text-[13px] font-semibold text-tvRed mb-4"></p>
+      <div id="qrLocalWarning" class="hidden mb-4 p-3 rounded-[6px] bg-gray-50 border-l-2 border-tvRed text-[12px] text-gray-700">
+        You're running the dashboard on this computer, so phones can't open this link. Generate QR codes from the dashboard on your hosted website.
+      </div>
+      <div class="flex justify-center p-4 border border-gray-200 rounded-[8px]">
+        <div id="qrCanvasBox" class="w-[220px] h-[220px] [&>img]:w-full [&>img]:h-full [&>canvas]:w-full [&>canvas]:h-full"></div>
+      </div>
+      <label for="qrUrlInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mt-4 mb-1.5">Survey link</label>
+      <div class="flex gap-2">
+        <input id="qrUrlInput" type="text" readonly class="flex-1 min-w-0 px-3 py-2 text-[12px] text-gray-700 border border-gray-300 rounded-[6px] bg-gray-50" />
+        <button id="qrCopyBtn" type="button" class="px-3 py-2 text-[12px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors shrink-0">Copy</button>
+      </div>
+      <div class="flex items-center justify-end gap-2.5 pt-5">
+        <button id="qrPrintBtn" type="button" class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Print</button>
+        <button id="qrDownloadBtn" type="button" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">Download PNG</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit Rating Category Modal ("Please rate the following items") -->
+  <div id="ratingCategoryModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="rcModalTitle">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="rcModalTitle" class="text-lg font-bold text-gray-900">Add Rating Category</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <p class="text-[13px] text-gray-500 mb-4">Customers rate each category with 1–5 stars on the same screen.</p>
+      <form id="ratingCategoryForm" action="javascript:void(0)" class="space-y-4">
+        <input type="hidden" id="rcEditId" />
+        <input type="hidden" id="rcIcon" />
+        <div>
+          <label for="rcName" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Category Name</label>
+          <input type="text" id="rcName" required maxlength="60" placeholder="e.g. Cleanliness" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <div class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Icon</div>
+          <div id="rcIconGrid" class="grid grid-cols-8 gap-1.5"></div>
+          <div class="flex items-center gap-2 mt-2.5">
+            <label for="rcIconCustom" class="text-[12px] text-gray-500 shrink-0">or type any emoji:</label>
+            <input type="text" id="rcIconCustom" maxlength="8" placeholder="🙂" class="w-20 px-2.5 py-1.5 text-[16px] text-center border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+          <button id="rcSaveBtn" type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors disabled:opacity-60">Save Category</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-tvDark text-white text-xs font-medium px-4 py-3 rounded-[8px] shadow-lg border border-neutral-800 transform translate-y-16 opacity-0 transition-all duration-200 pointer-events-none z-[70] flex items-center gap-2.5 max-w-[calc(100vw-2.5rem)]">
+    <span class="w-2 h-2 rounded-full bg-tvRed shrink-0"></span>
+    <span id="toastMessage">Action completed</span>
+  </div>
+
+  <script>
+    // Branches come from Firestore via js/branches.js (globals: branches, activeBranches, branchName)
+    let selectedBranchId = "All";
+    let currentView = "dashboard";
+    let currentSearch = "";
+    let selectedStarFilter = "All";
+    let selectedSentimentFilter = "All";
+    let targetReplyReviewId = null;
+
+    const views = {
+      dashboard: {
+        title: "Dashboard",
+        subtitle: "Ratings, sentiment and performance across your restaurant locations",
+        action: "+ Add Review", onAction: () => openModal("reviewModalBackdrop"),
+        filters: true, search: false
+      },
+      vouchers: {
+        title: "Vouchers",
+        subtitle: "5% thank-you vouchers — look up a code and redeem it once",
+        action: "Redeem a Voucher", onAction: () => document.getElementById("voucherCodeInput").focus(),
+        filters: false, search: false
+      },
+      reviews: {
+        title: "Reviews",
+        subtitle: "Customer feedback — reply to guests or flag submissions",
+        action: "+ Add Review", onAction: () => openModal("reviewModalBackdrop"),
+        filters: true, search: true
+      },
+      branches: {
+        title: "Branches",
+        subtitle: "Restaurant locations, survey QR codes and branch managers",
+        action: "+ Add Branch", onAction: () => openBranchModal(),
+        filters: false, search: false
+      },
+      employees: {
+        title: "Employees",
+        subtitle: "Staff profiles, positions and branch assignments",
+        action: "+ Add Employee", onAction: () => openEmployeeModal(),
+        filters: true, search: false   // branch filter bar at the top
+      },
+      surveyQuestions: {
+        title: "Survey Questions",
+        subtitle: "Customize the questions shown in the customer survey",
+        action: "+ Add Question", onAction: () => openSurveyQuestionModal(),
+        filters: false, search: false
+      }
+    };
+
+    // ---------- Helpers ----------
+    function sentimentFor(rating) {
+      if (rating === null) return "Unrated";
+      if (rating >= 4) return "Positive";
+      if (rating === 3) return "Neutral";
+      return "Needs Attention";
+    }
+
+    function formatDate(ts) {
+      if (ts && typeof ts.toDate === "function") return ts.toDate().toLocaleDateString();
+      return "Just now"; // serverTimestamp not yet resolved locally
+    }
+
+    let toastTimer;
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      document.getElementById("toastMessage").textContent = message;
+      toast.classList.remove("translate-y-16", "opacity-0");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.add("translate-y-16", "opacity-0"), 3200);
+    }
+
+    // ---------- Modals ----------
+    function openModal(id) {
+      const m = document.getElementById(id);
+      m.classList.remove("hidden");
+      m.classList.add("flex");
+      if (id === "reviewModalBackdrop" && selectedBranchId !== "All") {
+        document.getElementById("modalBranchSelect").value = selectedBranchId;
+      }
+      const first = m.querySelector("input:not([type=hidden]), textarea, select");
+      if (first) setTimeout(() => first.focus(), 50);
+    }
+
+    function closeModal(m) {
+      m.classList.add("hidden");
+      m.classList.remove("flex");
+    }
+
+    document.querySelectorAll("[role=dialog]").forEach(m => {
+      m.addEventListener("click", e => {
+        if (e.target === m || e.target.closest("[data-close-modal]")) closeModal(m);
+      });
+    });
+
+    document.addEventListener("keydown", e => {
+      if (e.key !== "Escape") return;
+      document.querySelectorAll("[role=dialog]").forEach(m => {
+        if (!m.classList.contains("hidden")) closeModal(m);
+      });
+      closeMobileSidebar();
+    });
+
+    // ---------- Navigation ----------
+    function switchView(viewName) {
+      const cfg = views[viewName] || views.dashboard;
+      currentView = views[viewName] ? viewName : "dashboard";
+
+      Object.keys(views).forEach(v => {
+        document.getElementById(v + "View").classList.toggle("hidden", v !== currentView);
+      });
+
+      document.querySelectorAll(".nav-btn").forEach(btn => {
+        const active = btn.dataset.nav === currentView;
+        btn.classList.toggle("text-white", active);
+        btn.classList.toggle("font-semibold", active);
+        btn.classList.toggle("text-gray-400", !active);
+        btn.classList.toggle("font-medium", !active);
+      });
+
+      document.getElementById("pageTitle").textContent = cfg.title;
+      document.getElementById("pageSubtitle").textContent = cfg.subtitle;
+      document.getElementById("primaryActionLabel").textContent = cfg.action;
+      document.getElementById("filterToolbar").classList.toggle("hidden", !cfg.filters);
+      document.getElementById("activeBranchBadge").classList.toggle("hidden", !cfg.filters);
+      document.getElementById("searchWrap").classList.toggle("hidden", !cfg.search);
+      document.getElementById("periodWrap").classList.toggle("hidden", currentView !== "reviews");
+
+      if (currentView === "dashboard") renderDashboardBranches();
+      if (currentView === "reviews") { renderReviewsFeed(); renderReviewsTab(); } // the tab also decides if search shows
+      if (currentView === "branches") renderBranchesAdmin();
+      if (currentView === "vouchers") renderVouchers();
+      if (currentView === "employees") renderEmployees();
+      if (currentView === "surveyQuestions") {
+        loadPhonePreview();
+        requestAnimationFrame(fitPhone); // the column has a real width only once the view is visible
+      }
+
+      closeMobileSidebar();
+    }
+
+    document.querySelectorAll(".nav-btn").forEach(btn => {
+      btn.addEventListener("click", () => switchView(btn.dataset.nav));
+    });
+    document.querySelector("[data-nav-link]").addEventListener("click", e => {
+      e.preventDefault();
+      switchView("dashboard");
+    });
+    document.getElementById("primaryActionBtn").addEventListener("click", () => views[currentView].onAction());
+
+    // Mobile sidebar drawer
+    const sidebar = document.getElementById("sidebar");
+    const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+    function openMobileSidebar() {
+      sidebar.classList.remove("-translate-x-full");
+      sidebarBackdrop.classList.remove("hidden");
+    }
+    function closeMobileSidebar() {
+      sidebar.classList.add("-translate-x-full");
+      sidebarBackdrop.classList.add("hidden");
+    }
+    document.getElementById("mobileMenuBtn").addEventListener("click", () => {
+      sidebar.classList.contains("-translate-x-full") ? openMobileSidebar() : closeMobileSidebar();
+    });
+    sidebarBackdrop.addEventListener("click", closeMobileSidebar);
+
+    // ---------- Branch filter ----------
+    function populateBranchSelects() {
+      const active = activeBranches();
+      const options = active.map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`).join("");
+      document.getElementById("branchSelect").innerHTML = '<option value="All">All Branches (Network Wide)</option>' + options;
+      document.getElementById("branchSelect").value = selectedBranchId;
+      document.getElementById("modalBranchSelect").innerHTML = active
+        .map(b => `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)}${b.region ? ` (${escapeHtml(b.region)})` : ""}</option>`).join("");
+    }
+
+    function selectBranch(branchId) {
+      selectedBranchId = branchId;
+      document.getElementById("branchSelect").value = branchId;
+      const label = branchId === "All" ? "All Branches" : branchName(branchId);
+      document.querySelector("#activeBranchBadge span").textContent = label;
+      updateKPIs();
+      renderDashboardBranches();
+      renderReviewsFeed();
+      renderEmployees();
+      renderReviewsTab();
+    }
+
+    document.getElementById("branchSelect").addEventListener("change", e => selectBranch(e.target.value));
+
+    // ---------- Dashboard branch cards ----------
+    function renderDashboardBranches() {
+      const gridEl = document.getElementById("branchGrid");
+      const active = activeBranches();
+      const scoped = selectedBranchId === "All" ? active : active.filter(b => b.id === selectedBranchId);
+
+      document.getElementById("branchCountLabel").textContent =
+        `Showing ${scoped.length} location${scoped.length === 1 ? "" : "s"}`;
+
+      if (scoped.length === 0) {
+        gridEl.innerHTML = `<p class="text-[13px] text-gray-500 md:col-span-2 xl:col-span-3">${
+          branchesLoaded ? 'No active branches. Add or import them under <strong>Branches</strong>.' : "Loading branches…"}</p>`;
+        return;
+      }
+
+      gridEl.innerHTML = scoped.map(b => {
+        const stats = branchStats(b.id);
+        const ratingText = stats.avg === null ? "—" : stats.avg.toFixed(1);
+        const latest = stats.latest;
+        return `
+          <article class="border border-gray-200 rounded-[10px] overflow-hidden flex flex-col hover:border-gray-300 transition-colors">
+            <div class="h-[3px] bg-tvRed"></div>
+            <div class="px-5 py-4 flex-1 flex flex-col">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase">${escapeHtml(b.region || "Branch")}</div>
+                  <h3 class="text-[15px] font-bold text-gray-900 mt-0.5">${escapeHtml(b.name)}</h3>
+                  <p class="text-[12px] text-gray-500 mt-0.5">${escapeHtml(b.address)}</p>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="text-[22px] font-bold text-gray-900 leading-none">${ratingText}</div>
+                  <div class="text-[11px] text-tvRed font-medium mt-1">${stats.count.toLocaleString()} review${stats.count === 1 ? "" : "s"}</div>
+                </div>
+              </div>
+              <div class="mt-3 p-3 rounded-[6px] bg-gray-50 border border-gray-100 flex-1">
+                <p class="text-[12px] text-gray-600 italic line-clamp-2 break-words">${latest ? `"${escapeHtml(latest.comment)}"` : "No reviews yet."}</p>
+                ${latest ? `<span class="block mt-1 text-[11px] font-semibold text-gray-400">— ${escapeHtml(latest.customerName || "Anonymous")}</span>` : ""}
+              </div>
+              <div class="mt-3 flex items-center justify-between gap-2">
+                <span class="text-[11px] font-medium text-gray-500">${b.manager ? `Manager: ${escapeHtml(b.manager)}` : ""}</span>
+                <button type="button" data-view-branch="${escapeHtml(b.id)}" class="text-[12px] font-semibold text-tvRed hover:underline shrink-0">
+                  View reviews →
+                </button>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    document.getElementById("branchGrid").addEventListener("click", e => {
+      const btn = e.target.closest("[data-view-branch]");
+      if (!btn) return;
+      selectBranch(btn.dataset.viewBranch);
+      switchView("reviews");
+    });
+
+    // ---------- Branches management ----------
+    function renderBranchesAdmin() {
+      const listEl = document.getElementById("branchesAdminList");
+      const emptyEl = document.getElementById("emptyBranchesState");
+
+      if (!branchesLoaded) {
+        listEl.innerHTML = '<p class="text-[13px] text-gray-500">Loading branches…</p>';
+        emptyEl.classList.add("hidden");
+        return;
+      }
+      if (branches.length === 0) {
+        listEl.innerHTML = "";
+        emptyEl.classList.remove("hidden");
+        return;
+      }
+      emptyEl.classList.add("hidden");
+
+      // Active first, then inactive
+      const ordered = [...activeBranches(), ...branches.filter(b => b.status === "inactive")];
+      listEl.innerHTML = ordered.map(b => {
+        const inactive = b.status === "inactive";
+        const stats = branchStats(b.id);
+        const staffCount = employees.filter(e => e.branchId === b.id).length;
+        const details = [b.region, b.address, b.manager ? `Manager: ${b.manager}` : ""].filter(Boolean);
+        return `
+          <article class="bg-white border border-gray-200 rounded-[10px] px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-gray-300 transition-colors ${inactive ? "opacity-60" : ""}">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="text-[15px] font-bold text-gray-900">${escapeHtml(b.name)}</h3>
+                <span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${inactive ? "bg-gray-100 text-gray-500" : "bg-gray-100 text-tvRed"}">${inactive ? "Inactive" : "Active"}</span>
+              </div>
+              <p class="text-[12px] text-gray-500 mt-0.5 break-words">${details.map(escapeHtml).join(" · ") || "No details yet"}</p>
+              <p class="text-[12px] text-gray-500 mt-1">
+                <span class="font-semibold text-gray-900">${stats.avg === null ? "—" : stats.avg.toFixed(1)}</span> avg ·
+                ${stats.count.toLocaleString()} review${stats.count === 1 ? "" : "s"} ·
+                ${staffCount} staff · <span class="text-gray-400">ID: ${escapeHtml(b.id)}</span>
+              </p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0 flex-wrap">
+              ${inactive ? "" : `<button type="button" data-action="qr" data-id="${escapeHtml(b.id)}" class="px-3 py-1.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold transition-colors">QR Code</button>`}
+              <button type="button" data-action="edit" data-id="${escapeHtml(b.id)}" class="px-3 py-1.5 rounded-[6px] border border-gray-200 text-gray-700 hover:bg-gray-100 text-[12px] font-semibold transition-colors">Edit</button>
+              <button type="button" data-action="toggle" data-id="${escapeHtml(b.id)}" class="px-3 py-1.5 rounded-[6px] border border-gray-200 text-gray-600 hover:bg-gray-100 text-[12px] font-semibold transition-colors">${inactive ? "Reactivate" : "Deactivate"}</button>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    document.getElementById("branchesAdminList").addEventListener("click", e => {
+      const btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      const id = btn.dataset.id;
+      if (btn.dataset.action === "edit") openBranchModal(id);
+      if (btn.dataset.action === "toggle") toggleBranchStatus(id);
+      if (btn.dataset.action === "qr") openQrModal(id);
+    });
+
+    function openBranchModal(editId = null) {
+      const b = editId ? branches.find(x => x.id === editId) : null;
+      document.getElementById("branchModalTitle").textContent = b ? "Edit Branch" : "Add Branch";
+      document.getElementById("branchEditId").value = b ? b.id : "";
+      document.getElementById("branchNameInput").value = b ? b.name || "" : "";
+      document.getElementById("branchRegionInput").value = b ? b.region || "" : "";
+      document.getElementById("branchAddressInput").value = b ? b.address || "" : "";
+      document.getElementById("branchManagerInput").value = b ? b.manager || "" : "";
+      openModal("branchModalBackdrop");
+    }
+
+    document.getElementById("branchForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const editId = document.getElementById("branchEditId").value;
+      const data = {
+        name: document.getElementById("branchNameInput").value.trim(),
+        region: document.getElementById("branchRegionInput").value.trim(),
+        address: document.getElementById("branchAddressInput").value.trim(),
+        manager: document.getElementById("branchManagerInput").value.trim(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if (!data.name) {
+        showToast("Please enter a branch name.");
+        return;
+      }
+      try {
+        if (editId) {
+          // The id never changes: reviews and staff reference it
+          await db.collection("branches").doc(editId).update(data);
+          showToast(`Branch "${data.name}" updated.`);
+        } else {
+          const id = uniqueBranchId(data.name);
+          await db.collection("branches").doc(id).set({
+            ...data,
+            status: "active",
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          showToast(`Branch "${data.name}" added.`);
+        }
+        closeModal(document.getElementById("branchModalBackdrop"));
+      } catch (err) {
+        console.error("Error saving branch:", err);
+        showToast("Failed to save branch. Are the new Firestore rules published?");
+      }
+    });
+
+    async function toggleBranchStatus(id) {
+      const b = branches.find(x => x.id === id);
+      if (!b) return;
+      const deactivate = b.status !== "inactive";
+      if (deactivate && !confirm(`Deactivate "${b.name}"? It will disappear from the customer survey. Its reviews and staff are kept.`)) return;
+      try {
+        await db.collection("branches").doc(id).update({
+          status: deactivate ? "inactive" : "active",
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showToast(deactivate ? `"${b.name}" deactivated.` : `"${b.name}" is active again.`);
+      } catch (err) {
+        console.error("Error updating branch:", err);
+        showToast("Failed to update branch.");
+      }
+    }
+
+    document.getElementById("importBranchesBtn").addEventListener("click", async e => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const batch = db.batch();
+        const now = firebase.firestore.FieldValue.serverTimestamp();
+        DEFAULT_BRANCHES.forEach(({ id, ...rest }) => {
+          batch.set(db.collection("branches").doc(id), { ...rest, status: "active", createdAt: now, updatedAt: now });
+        });
+        await batch.commit();
+        showToast(`${DEFAULT_BRANCHES.length} branches imported.`);
+      } catch (err) {
+        console.error("Error importing branches:", err);
+        showToast("Import failed. Are the new Firestore rules published?");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ---------- Branch QR codes ----------
+    let qrTargetId = null;
+
+    function surveyUrlFor(branchId) {
+      const url = new URL("jiangnan_customer_review_survey.html", location.href);
+      url.search = "";
+      url.hash = "";
+      url.searchParams.set("branch", branchId);
+      return url.toString();
+    }
+
+    function openQrModal(id) {
+      const b = branches.find(x => x.id === id);
+      if (!b) return;
+      if (typeof QRCode === "undefined") {
+        showToast("QR library failed to load. Check your internet connection.");
+        return;
+      }
+      qrTargetId = id;
+      const url = surveyUrlFor(id);
+      document.getElementById("qrBranchLabel").textContent = b.name;
+      document.getElementById("qrUrlInput").value = url;
+      const isLocal = location.protocol === "file:" || ["localhost", "127.0.0.1", ""].includes(location.hostname);
+      document.getElementById("qrLocalWarning").classList.toggle("hidden", !isLocal);
+
+      const box = document.getElementById("qrCanvasBox");
+      box.innerHTML = "";
+      new QRCode(box, { text: url, width: 512, height: 512, colorDark: "#141414", colorLight: "#ffffff", correctLevel: QRCode.CorrectLevel.M });
+      openModal("qrModalBackdrop");
+    }
+
+    function qrDataUrl() {
+      const canvas = document.querySelector("#qrCanvasBox canvas");
+      if (canvas) return canvas.toDataURL("image/png");
+      const img = document.querySelector("#qrCanvasBox img");
+      return img ? img.src : null;
+    }
+
+    document.getElementById("qrCopyBtn").addEventListener("click", async () => {
+      const input = document.getElementById("qrUrlInput");
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch {
+        input.select();
+        document.execCommand("copy");
+      }
+      showToast("Survey link copied.");
+    });
+
+    document.getElementById("qrDownloadBtn").addEventListener("click", () => {
+      const data = qrDataUrl();
+      if (!data) return;
+      const a = document.createElement("a");
+      a.href = data;
+      a.download = `jiangnan-qr-${qrTargetId}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+
+    document.getElementById("qrPrintBtn").addEventListener("click", () => {
+      const data = qrDataUrl();
+      const b = branches.find(x => x.id === qrTargetId);
+      if (!data || !b) return;
+      const w = window.open("", "_blank", "width=600,height=750");
+      if (!w) {
+        showToast("Allow pop-ups to print the QR code.");
+        return;
+      }
+      // Closing tags are written as <\/tag> on purpose: dev servers like VS Code Live Server
+      // inject their reload script before the first closing body tag in the file, and a
+      // literal one here would split this script in half ("Unexpected end of input").
+      // Never type a literal closing body/head tag anywhere inside this script, comments included.
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(b.name)} — Survey QR<\/title>
+        <style>body{font-family:Inter,Arial,sans-serif;text-align:center;padding:40px;color:#141414}
+        .logo{display:block;margin:0 auto;width:110px;height:110px;object-fit:contain}
+        h1{font-size:28px;margin:18px 0 4px}p{color:#555;margin:0 0 24px}img.qr{width:320px;height:320px}
+        .cta{font-size:20px;font-weight:700;color:#c8102e;margin-top:20px}<\/style><\/head>
+        <body><img class="logo" src="${new URL("images/jiangnan-logo.png", location.href).href}" alt="Jiang Nan Hotpot"><div style="font-weight:700;letter-spacing:.02em;margin-top:6px">Jiang Nan Hotpot<\/div>
+        <h1>${escapeHtml(b.name)}<\/h1><p>${escapeHtml(b.address || "")}<\/p>
+        <img class="qr" src="${data}" alt="Survey QR code"><div class="cta">Scan to rate your visit<\/div><\/body><\/html>`);
+      w.document.close();
+      w.onload = () => { w.focus(); w.print(); };
+      setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 600);
+    });
+
+    // ---------- Survey phone preview (Survey Questions page) ----------
+    // The phone shows the real customer survey with ?preview=1: display only, the page itself
+    // blocks every save. It listens to the questions live, so edits appear automatically.
+    const PHONE_W = 414, PHONE_H = 860; // device size incl. bezel (390 px wide screen, like a real phone)
+    const phoneFrame = document.getElementById("phonePreviewFrame");
+
+    function fitPhone() {
+      const fit = document.getElementById("phoneFit");
+      const w = fit.clientWidth;
+      if (!w) return;
+      let s = Math.min(1, w / PHONE_W);
+      // Side-by-side layout (xl): the phone is pinned while scrolling, so it must also fit the window height
+      if (window.innerWidth >= 1280) {
+        const room = window.innerHeight - 78 /* sticky top */ - 190 /* title, caption and breathing room */;
+        s = Math.max(0.5, Math.min(s, room / PHONE_H));
+      }
+      document.getElementById("phoneDevice").style.transform = `scale(${s})`;
+      document.getElementById("phoneScaler").style.height = `${Math.ceil(PHONE_H * s)}px`;
+    }
+    if (window.ResizeObserver) new ResizeObserver(fitPhone).observe(document.getElementById("phoneFit"));
+    window.addEventListener("resize", fitPhone);
+
+    // Load lazily (first visit to the page) so the dashboard doesn't run a second survey in the background
+    function loadPhonePreview(force = false) {
+      if (phoneFrame.dataset.loaded && !force) return;
+      document.getElementById("phonePreviewLoading").classList.remove("hidden");
+      phoneFrame.src = `jiangnan_customer_review_survey.html?preview=1&t=${Date.now()}`;
+      phoneFrame.dataset.loaded = "1";
+    }
+    phoneFrame.addEventListener("load", () => document.getElementById("phonePreviewLoading").classList.add("hidden"));
+    document.getElementById("previewRestartBtn").addEventListener("click", () => loadPhonePreview(true));
+
+    // "Preview" on a question card: jump the phone to that question
+    // (stepKey = "q:<id>" for your own questions, or a built-in step like "rate:overall")
+    window.previewSurveyQuestion = stepKey => {
+      const win = phoneFrame.contentWindow;
+      const ready = win && typeof win.previewGoTo === "function";
+      if (ready && win.previewGoTo(stepKey)) return;
+      if (!ready) showToast("The preview is still loading. Try again in a moment.");
+      else if (stepKey === "staff-rate") showToast("In the phone, pick a staff member first. This question only appears after that.");
+      else showToast("That question isn't in the survey right now.");
+    };
+
+    // Called by js/branches.js whenever the branches collection changes
+    window.onBranchesChanged = error => {
+      if (error) showToast("Could not load branches. Are the new Firestore rules published?");
+      if (selectedBranchId !== "All" && !activeBranches().some(b => b.id === selectedBranchId)) {
+        selectBranch("All");
+      }
+      populateBranchSelects();
+      if (currentView === "vouchers") renderVouchers(); // branch names + redeem-branch picker
+      renderDashboardBranches();
+      renderBranchesAdmin();
+      renderEmployees();
+      renderReviewsFeed();
+    };
+
+    // ---------- Reviews feed ----------
+    function renderReviewsFeed() {
+      const feedEl = document.getElementById("allReviewsFeed");
+      const emptyEl = document.getElementById("emptyReviewsState");
+      if (!feedEl) return;
+
+      let allReviews = reviewsInScope() // branch + period (js/reviewsInsights.js)
+        .slice()
+        .sort((a, b) => submissionTime(b) - submissionTime(a))
+        .map(s => {
+          const rating = overallRating(s);
+          return {
+            raw: s,
+            id: s.id,
+            user: s.customerName || "Anonymous",
+            rating,
+            date: formatDate(s.createdAt),
+            branchName: s.branchName || branchName(s.branchId),
+            comment: s.comment || "",
+            staffName: s.staffMember || "Unassigned",
+            dish: s.dish || "",
+            sentiment: sentimentFor(rating),
+            reply: s.reply || "",
+            flagged: !!s.flagged
+          };
+        });
+
+      // Rebuild staff dropdown from the current branch scope
+      const staffSelect = document.getElementById("staffFilterSelect");
+      const uniqueStaff = [...new Set(allReviews.map(r => r.staffName).filter(s => s && s !== "Unassigned"))].sort();
+      staffSelect.innerHTML = '<option value="All">All Staff</option>' +
+        uniqueStaff.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+      if (!uniqueStaff.includes(selectedStaffFilter)) selectedStaffFilter = "All";
+      staffSelect.value = selectedStaffFilter;
+
+      if (selectedStaffFilter !== "All") {
+        allReviews = allReviews.filter(r => r.staffName === selectedStaffFilter);
+      }
+      if (selectedStarFilter !== "All") {
+        allReviews = selectedStarFilter === "3"
+          ? allReviews.filter(r => r.rating !== null && r.rating <= 3)
+          : allReviews.filter(r => r.rating === Number(selectedStarFilter));
+      }
+      if (selectedSentimentFilter !== "All") {
+        allReviews = allReviews.filter(r => r.sentiment === selectedSentimentFilter);
+      }
+      const q = currentSearch.toLowerCase().trim();
+      if (q) {
+        allReviews = allReviews.filter(r =>
+          r.comment.toLowerCase().includes(q) ||
+          r.dish.toLowerCase().includes(q) ||
+          r.user.toLowerCase().includes(q) ||
+          r.branchName.toLowerCase().includes(q) ||
+          r.staffName.toLowerCase().includes(q)
+        );
+      }
+
+      if (allReviews.length === 0) {
+        feedEl.innerHTML = "";
+        emptyEl.classList.remove("hidden");
+        return;
+      }
+      emptyEl.classList.add("hidden");
+
+      const badgeClass = {
+        "Positive": "bg-gray-100 text-gray-700",
+        "Neutral": "bg-gray-100 text-gray-500",
+        "Needs Attention": "bg-tvRed text-white",
+        "Unrated": "bg-gray-100 text-gray-400"
+      };
+
+      feedEl.innerHTML = allReviews.map(rev => `
+        <article class="bg-white border ${rev.flagged ? "border-tvRed" : "border-gray-200"} rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-9 h-9 rounded-full bg-tvDark text-white text-sm font-bold flex items-center justify-center shrink-0">
+                ${escapeHtml(rev.user.charAt(0).toUpperCase())}
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="text-[14px] font-bold text-gray-900 break-words">${escapeHtml(rev.user)}</h3>
+                  <span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${badgeClass[rev.sentiment]}">${rev.sentiment}</span>
+                  ${rev.flagged ? '<span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold border border-tvRed text-tvRed">Flagged</span>' : ""}
+                </div>
+                <p class="text-[12px] text-gray-500 mt-0.5">${escapeHtml(rev.date)} · ${escapeHtml(rev.branchName)} · Staff: ${escapeHtml(rev.staffName)}</p>
+              </div>
+            </div>
+            <div class="text-right shrink-0">
+              <div class="text-[18px] font-bold text-gray-900 leading-none">${rev.rating === null ? "—" : rev.rating + ".0"}</div>
+              <div class="text-[11px] tracking-[1px] text-tvRed mt-1" aria-label="${rev.rating ?? 0} out of 5 stars">${"★".repeat(rev.rating || 0)}<span class="text-gray-300">${"★".repeat(5 - (rev.rating || 0))}</span></div>
+            </div>
+          </div>
+
+          ${rev.comment ? `<p class="text-[13.5px] text-gray-700 leading-relaxed mt-3 break-words">"${escapeHtml(rev.comment)}"</p>` : ""}
+
+          <details class="mt-3"${openFullResponses.has(rev.id) ? " open" : ""} data-full="${escapeHtml(rev.id)}">
+            <summary class="cursor-pointer select-none text-[12.5px] font-semibold text-tvRed hover:underline">
+              <span class="when-closed">View full response</span><span class="when-open">Hide full response</span>
+            </summary>
+            ${fullResponseHtml(rev.raw)}
+          </details>
+
+          ${rev.reply ? `
+            <div class="mt-3 p-3 bg-gray-50 rounded-[6px] border-l-2 border-tvRed text-[12.5px] text-gray-700 break-words">
+              <strong class="text-gray-900">Management response:</strong> ${escapeHtml(rev.reply)}
+            </div>` : ""}
+
+          <div class="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-100">
+            <span class="text-[12px] text-gray-500">${rev.dish ? `Specialty: <span class="font-medium text-gray-700">${escapeHtml(rev.dish)}</span>` : ""}</span>
+            <div class="flex items-center gap-2">
+              <button type="button" data-action="reply" data-id="${escapeHtml(rev.id)}" class="px-3 py-1.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold transition-colors">
+                ${rev.reply ? "Edit Reply" : "Reply"}
+              </button>
+              <button type="button" data-action="flag" data-id="${escapeHtml(rev.id)}" class="px-3 py-1.5 rounded-[6px] border text-[12px] font-semibold transition-colors ${rev.flagged ? "border-tvRed text-tvRed bg-white hover:bg-gray-50" : "border-gray-200 text-gray-600 hover:bg-gray-100"}">
+                ${rev.flagged ? "Unflag" : "Flag"}
+              </button>
+            </div>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    // Keep "full response" panels open across live re-renders
+    const openFullResponses = new Set();
+    document.getElementById("allReviewsFeed").addEventListener("toggle", e => {
+      const d = e.target.closest && e.target.closest("details[data-full]");
+      if (!d) return;
+      d.open ? openFullResponses.add(d.dataset.full) : openFullResponses.delete(d.dataset.full);
+    }, true);
+
+    document.getElementById("allReviewsFeed").addEventListener("click", e => {
+      const btn = e.target.closest("[data-action]");
+      if (!btn) return;
+      if (btn.dataset.action === "reply") openReplyModal(btn.dataset.id);
+      if (btn.dataset.action === "flag") toggleFlagReview(btn.dataset.id);
+    });
+
+    // ---------- Filters ----------
+    function setStarFilter(star) {
+      selectedStarFilter = star;
+      document.querySelectorAll(".star-filter-btn").forEach(btn => {
+        const active = btn.dataset.star === star;
+        btn.classList.toggle("bg-tvRed", active);
+        btn.classList.toggle("text-white", active);
+        btn.classList.toggle("text-gray-600", !active);
+        btn.classList.toggle("hover:bg-gray-100", !active);
+      });
+      renderReviewsFeed();
+    }
+    document.querySelectorAll(".star-filter-btn").forEach(btn => {
+      btn.addEventListener("click", () => setStarFilter(btn.dataset.star));
+    });
+
+    document.getElementById("sentimentFilterSelect").addEventListener("change", e => {
+      selectedSentimentFilter = e.target.value;
+      renderReviewsFeed();
+    });
+    document.getElementById("staffFilterSelect").addEventListener("change", e => setStaffFilter(e.target.value));
+
+    function clearSearch() {
+      document.getElementById("searchInput").value = "";
+      currentSearch = "";
+      document.getElementById("clearSearchBtn").classList.add("hidden");
+      renderReviewsFeed();
+      renderReviewsTab();
+    }
+    document.getElementById("searchInput").addEventListener("input", e => {
+      currentSearch = e.target.value;
+      document.getElementById("clearSearchBtn").classList.toggle("hidden", currentSearch.length === 0);
+      renderReviewsFeed();
+      if (activeReviewTab === "suggestions") renderReviewsTab();
+    });
+    document.getElementById("clearSearchBtn").addEventListener("click", clearSearch);
+
+    document.getElementById("resetFiltersBtn").addEventListener("click", () => {
+      document.getElementById("sentimentFilterSelect").value = "All";
+      selectedSentimentFilter = "All";
+      selectedStaffFilter = "All";
+      clearSearch();
+      setStarFilter("All");
+    });
+
+    // ---------- Add review (saved to Firestore, same shape as the customer survey) ----------
+    document.getElementById("submitReviewForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const branchId = document.getElementById("modalBranchSelect").value;
+      const rating = parseInt(document.getElementById("reviewRatingInput").value, 10);
+      try {
+        await db.collection("surveys").add({
+          branchId,
+          branchName: branchName(branchId),
+          customerName: document.getElementById("reviewerNameInput").value.trim() || "Anonymous",
+          comment: document.getElementById("reviewCommentInput").value.trim(),
+          dish: document.getElementById("reviewDishInput").value.trim(),
+          ratings: { overall: rating },
+          source: "manual",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        closeModal(document.getElementById("reviewModalBackdrop"));
+        e.target.reset();
+        showToast(`Review published for ${branchName(branchId)}.`);
+      } catch (err) {
+        console.error("Error adding review:", err);
+        showToast("Failed to publish review. Please try again.");
+      }
+    });
+
+    // ---------- Reply & flag (persisted on the survey document) ----------
+    function openReplyModal(reviewId) {
+      const s = surveySubmissions.find(x => x.id === reviewId);
+      if (!s) return;
+      targetReplyReviewId = reviewId;
+      document.getElementById("replyTargetCustomer").textContent = `Replying to ${s.customerName || "Anonymous"}`;
+      document.getElementById("replyMessageInput").value = s.reply || "";
+      openModal("replyModalBackdrop");
+    }
+
+    document.getElementById("replyForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const msg = document.getElementById("replyMessageInput").value.trim();
+      if (!msg || !targetReplyReviewId) return;
+      try {
+        await db.collection("surveys").doc(targetReplyReviewId).update({
+          reply: msg,
+          repliedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        closeModal(document.getElementById("replyModalBackdrop"));
+        showToast("Management response saved.");
+      } catch (err) {
+        console.error("Error saving reply:", err);
+        showToast("Failed to save reply. Please try again.");
+      }
+    });
+
+    async function toggleFlagReview(reviewId) {
+      const s = surveySubmissions.find(x => x.id === reviewId);
+      if (!s) return;
+      const flagged = !s.flagged;
+      try {
+        await db.collection("surveys").doc(reviewId).update({ flagged });
+        showToast(flagged ? "Review flagged for moderation." : "Flag removed.");
+      } catch (err) {
+        console.error("Error flagging review:", err);
+        showToast("Failed to update flag.");
+      }
+    }
+
+    // ---------- Authentication ----------
+    const auth = firebase.auth();
+
+    // reCAPTCHA v2 checkbox: Sign in stays disabled until "I'm not a robot" is ticked.
+    // (No server here to verify the token; Firebase App Check is the server-side layer.)
+    // typeof guard: an outdated cached firebase-config.js must not break the login
+    const captchaEnabled = typeof RECAPTCHA_V2_SITE_KEY !== "undefined" && !!RECAPTCHA_V2_SITE_KEY;
+    let captchaWidgetId = null;
+    let captchaToken = null;
+
+    function setCaptchaToken(token) {
+      captchaToken = token;
+      document.getElementById("loginSubmitBtn").disabled = captchaEnabled && !token;
+    }
+
+    function resetCaptcha() {
+      if (captchaWidgetId !== null && window.grecaptcha) grecaptcha.reset(captchaWidgetId);
+      setCaptchaToken(null);
+    }
+
+    // Called by the reCAPTCHA script once it has loaded (it is injected below, after this is defined)
+    window.onRecaptchaLoad = () => {
+      captchaWidgetId = grecaptcha.render("recaptchaBox", {
+        sitekey: RECAPTCHA_V2_SITE_KEY,
+        size: window.innerWidth < 360 ? "compact" : "normal",
+        callback: token => setCaptchaToken(token),
+        "expired-callback": () => setCaptchaToken(null),
+        "error-callback": () => setCaptchaToken(null)
+      });
+    };
+
+    if (captchaEnabled) {
+      const s = document.createElement("script");
+      s.src = "https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit";
+      s.async = true;
+      s.defer = true;
+      document.head.appendChild(s);
+    } else {
+      document.getElementById("recaptchaBox").classList.add("hidden");
+      document.getElementById("recaptchaMissing").classList.remove("hidden");
+      console.warn("Login CAPTCHA is off: set RECAPTCHA_V2_SITE_KEY in js/firebase-config.js.");
+    }
+    setCaptchaToken(null);
+
+    document.getElementById("loginForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const errEl = document.getElementById("loginError");
+      const btn = document.getElementById("loginSubmitBtn");
+      errEl.classList.add("hidden");
+      if (captchaEnabled && !captchaToken) {
+        errEl.textContent = "Please tick \"I'm not a robot\".";
+        errEl.classList.remove("hidden");
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = "Signing in…";
+      let failed = false;
+      try {
+        await auth.signInWithEmailAndPassword(
+          document.getElementById("loginEmail").value.trim(),
+          document.getElementById("loginPassword").value
+        );
+      } catch (err) {
+        const messages = {
+          "auth/invalid-credential": "Incorrect email or password.",
+          "auth/invalid-email": "That email address isn't valid.",
+          "auth/user-disabled": "This account has been disabled.",
+          "auth/too-many-requests": "Too many attempts. Try again in a few minutes.",
+          "auth/operation-not-allowed": "Email/password sign-in isn't enabled in the Firebase Console.",
+          "auth/network-request-failed": "Network error. Check your connection."
+        };
+        console.warn("Sign-in failed:", err.code, err.message);
+        errEl.textContent = (messages[err.code] || "Sign-in failed. Please try again.") + ` (${err.code || "unknown error"})`;
+        errEl.classList.remove("hidden");
+        failed = true;
+      } finally {
+        btn.textContent = "Sign in";
+        // Every attempt needs a fresh CAPTCHA, which slows down password guessing
+        if (failed) resetCaptcha();
+        else btn.disabled = false;
+      }
+    });
+
+    // Password reset email (sent from this Firebase project)
+    document.getElementById("forgotPasswordBtn").addEventListener("click", async () => {
+      const email = document.getElementById("loginEmail").value.trim();
+      const errEl = document.getElementById("loginError");
+      const infoEl = document.getElementById("loginInfo");
+      errEl.classList.add("hidden");
+      infoEl.classList.add("hidden");
+      if (!email) {
+        errEl.textContent = "Type your email above first, then click \"Forgot password?\".";
+        errEl.classList.remove("hidden");
+        return;
+      }
+      try {
+        await auth.sendPasswordResetEmail(email);
+        infoEl.textContent = `If an account exists for ${email}, a reset link is on its way. Check your inbox and spam folder. No email means this account isn't in this Firebase project.`;
+        infoEl.classList.remove("hidden");
+      } catch (err) {
+        console.warn("Password reset failed:", err.code, err.message);
+        errEl.textContent = err.code === "auth/invalid-email"
+          ? "That email address isn't valid."
+          : `Couldn't send the reset email (${err.code || "unknown error"}).`;
+        errEl.classList.remove("hidden");
+      }
+    });
+
+    document.getElementById("signOutBtn").addEventListener("click", async () => {
+      await auth.signOut();
+      resetCaptcha();
+    });
+
+    // ---------- Who sees the dashboard ----------
+    // Signed in is not enough: the account also needs an admins/{uid} document
+    // (the Firestore rules enforce the same thing).
+    function showLoginForm() {
+      document.getElementById("loginOverlay").classList.remove("hidden");
+      document.getElementById("loginForm").classList.remove("hidden");
+      document.getElementById("notAdminPanel").classList.add("hidden");
+    }
+
+    function showNotAdmin(user, status) {
+      document.getElementById("loginOverlay").classList.remove("hidden");
+      document.getElementById("loginForm").classList.add("hidden");
+      document.getElementById("notAdminPanel").classList.remove("hidden");
+      document.getElementById("notAdminEmail").textContent = user.email || user.uid;
+      document.getElementById("notAdminUid").value = user.uid;
+      document.getElementById("notAdminMessage").innerHTML = status === "missing"
+        ? 'This account isn\'t an admin yet. In Firebase Console → <strong>Firestore Database</strong>, create a collection named <code>admins</code> with a document whose ID is the UID below.'
+        : `Couldn't check admin access (<code>${escapeHtml(status)}</code>). Make sure the new Firestore rules are published, then check again.`;
+    }
+
+    let authCheckSeq = 0;
+    async function handleSignedInUser(user) {
+      const seq = ++authCheckSeq;
+      let status;
+      try {
+        const snap = await db.collection("admins").doc(user.uid).get();
+        status = snap.exists ? "admin" : "missing";
+      } catch (err) {
+        console.warn("Admin check failed:", err.code, err.message);
+        status = err.code || "unknown-error";
+      }
+      if (seq !== authCheckSeq) return; // user changed while we were checking
+      if (status === "admin") {
+        document.getElementById("loginOverlay").classList.add("hidden");
+        subscribeToSurveySubmissions();
+        subscribeToVouchers();
+      } else {
+        showNotAdmin(user, status);
+      }
+    }
+
+    auth.onAuthStateChanged(user => {
+      document.getElementById("userEmailLabel").textContent = user ? user.email : "";
+      if (user) {
+        handleSignedInUser(user);
+      } else {
+        authCheckSeq++;
+        showLoginForm();
+        unsubscribeFromSurveySubmissions();
+        unsubscribeFromVouchers();
+        document.getElementById("loginPassword").value = "";
+        updateKPIs();
+        renderDashboardBranches();
+        renderReviewsFeed();
+      }
+    });
+
+    document.getElementById("recheckAdminBtn").addEventListener("click", async e => {
+      const btn = e.currentTarget;
+      if (!auth.currentUser) return showLoginForm();
+      btn.disabled = true;
+      btn.textContent = "Checking…";
+      await handleSignedInUser(auth.currentUser);
+      btn.disabled = false;
+      btn.textContent = "Check again";
+    });
+
+    document.getElementById("notAdminSignOutBtn").addEventListener("click", () => auth.signOut());
+
+    document.getElementById("copyUidBtn").addEventListener("click", async () => {
+      const input = document.getElementById("notAdminUid");
+      try {
+        await navigator.clipboard.writeText(input.value);
+      } catch {
+        input.select();
+        document.execCommand("copy");
+      }
+      showToast("UID copied.");
+    });
+
+    // ---------- Init ----------
+    populateBranchSelects();
+    setStarFilter("All");
+    switchView("dashboard");
+    updateKPIs();
+  </script>
+</body>
+</html>

@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TABLEVIBE — Dashboard</title>
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Load Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+          },
+          colors: {
+            tvDark: '#141414',
+            tvDarkHover: '#222222',
+            tvRed: '#c8102e',
+            tvRedHover: '#a70d26',
+            tvBg: '#f3f4f6',
+            tvBar: '#b3b3b3',
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
+
+  <!-- Top Dark Header Bar -->
+  <header class="h-[58px] bg-tvDark text-white flex items-center justify-between px-4 sm:px-6 border-b border-neutral-800 sticky top-0 z-30">
+    <div class="flex items-center gap-3">
+      <!-- Mobile Menu Toggle -->
+      <button id="mobileMenuBtn" type="button" aria-label="Toggle Navigation" class="md:hidden p-2 -ml-2 rounded-lg text-gray-300 hover:text-white hover:bg-tvDarkHover focus:outline-none">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      <!-- Brand Logo & Wordmark -->
+      <a href="#dashboard" onclick="switchSection('Dashboard', event)" class="flex items-center gap-3 group">
+        <div class="w-[30px] h-[30px] bg-tvRed rounded-[6px] flex items-center justify-center font-extrabold text-[16px] text-white shadow-sm group-hover:bg-tvRedHover transition-colors">
+          T
+        </div>
+        <span class="font-bold text-[16px] tracking-[0.04em] text-white">TABLEVIBE</span>
+      </a>
+    </div>
+
+    <!-- Role Indicator -->
+    <div class="text-[12.5px] font-medium tracking-[0.05em] text-gray-200">
+      ADMINISTRATOR
+    </div>
+  </header>
+
+  <!-- Main App Body -->
+  <div class="flex flex-1 relative">
+    <!-- Mobile Backdrop -->
+    <div id="sidebarBackdrop" class="fixed inset-0 bg-black/50 z-20 hidden md:hidden"></div>
+
+    <!-- Left Dark Sidebar -->
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 top-[58px] md:top-0 w-[215px] bg-tvDark text-gray-400 flex flex-col justify-between py-5 z-20 transform -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out shrink-0">
+      <div class="flex flex-col">
+        <!-- WORKSPACE Section -->
+        <div>
+          <div class="text-[10.5px] font-bold tracking-[0.06em] text-neutral-500 px-5 pb-2.5 uppercase">
+            WORKSPACE
+          </div>
+          <ul class="space-y-0.5" id="workspaceNav">
+            <li>
+              <button type="button" data-nav="Dashboard" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-semibold text-white bg-transparent hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                  <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                  <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                  <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+                </svg>
+                <span>Dashboard</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="Inbox" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                </svg>
+                <span>Inbox</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="Surveys" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                  <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                  <line x1="9" y1="12" x2="15" y2="12"></line>
+                  <line x1="9" y1="16" x2="13" y2="16"></line>
+                </svg>
+                <span>Surveys</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="QR Codes" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7"></rect>
+                  <rect x="14" y="3" width="7" height="7"></rect>
+                  <rect x="3" y="14" width="7" height="7"></rect>
+                  <path d="M14 14h3v3h-3z"></path>
+                  <path d="M20 14v3h1"></path>
+                  <path d="M14 20h7"></path>
+                </svg>
+                <span>QR Codes</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="Venues" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                  <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+                <span>Venues</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="Google Reviews" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                </svg>
+                <span>Google Reviews</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <!-- MANAGEMENT Section -->
+        <div class="mt-9">
+          <div class="text-[10.5px] font-bold tracking-[0.06em] text-neutral-500 px-5 pb-2.5 uppercase">
+            MANAGEMENT
+          </div>
+          <ul class="space-y-0.5">
+            <li>
+              <button type="button" data-nav="Rewards" class="nav-btn w-full flex items-center gap-3 px-5 py-2 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <span>Rewards</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-nav="Users" class="nav-btn w-full flex items-center gap-3 px-5 py-2 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <span>Users</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Light Gray Main Content Area -->
+    <main class="flex-1 p-5 sm:p-7 lg:px-9 lg:py-7 max-w-[1400px] w-full">
+      <!-- Page Header -->
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 id="pageTitle" class="text-[26px] font-bold text-gray-900 leading-tight">Dashboard</h1>
+          <p id="pageSubtitle" class="text-[13px] text-gray-500 mt-1">Restaurant performance overview</p>
+        </div>
+
+        <button id="openSurveyModalBtn" type="button" class="self-start sm:self-auto bg-tvRed hover:bg-tvRedHover active:translate-y-px text-white font-semibold text-[13px] px-4 py-2.5 rounded-[6px] inline-flex items-center gap-1.5 transition-all shadow-sm cursor-pointer">
+          <span>+ Create Survey</span>
+        </button>
+      </div>
+
+      <!-- Contextual Banner for Secondary Sidebar Views -->
+      <div id="contextBanner" class="hidden mb-5 bg-white border border-gray-200 rounded-[10px] p-4 flex items-center justify-between gap-4 shadow-xs">
+        <div class="flex items-center gap-3">
+          <span class="w-2.5 h-2.5 rounded-full bg-tvRed shrink-0"></span>
+          <p id="contextBannerText" class="text-sm text-gray-700"></p>
+        </div>
+        <button type="button" onclick="switchSection('Dashboard')" class="text-xs font-semibold text-tvRed hover:underline shrink-0">
+          Back to Overview
+        </button>
+      </div>
+
+      <!-- 2x2 Grid of White Rounded KPI Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-[18px] mb-[18px]">
+        <!-- Card 1: TOTAL FEEDBACK -->
+        <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+          <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">
+            TOTAL FEEDBACK
+          </div>
+          <div id="totalFeedbackCount" class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5">
+            1,284
+          </div>
+          <div class="text-[12px] font-medium text-tvRed">
+            +12.5%
+          </div>
+        </div>
+
+        <!-- Card 2: AVERAGE RATING -->
+        <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+          <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">
+            AVERAGE RATING
+          </div>
+          <div class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5">
+            4.7 / 5
+          </div>
+          <div class="text-[13px] tracking-[1px] text-tvRed leading-none" aria-label="5 out of 5 stars">
+            ★★★★★
+          </div>
+        </div>
+
+        <!-- Card 3: UNRESOLVED -->
+        <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+          <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">
+            UNRESOLVED
+          </div>
+          <div class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5">
+            24
+          </div>
+          <div class="text-[12px] font-medium text-tvRed">
+            Needs attention
+          </div>
+        </div>
+
+        <!-- Card 4: GOOGLE REVIEWS -->
+        <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-gray-300 transition-colors">
+          <div class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase mb-2.5">
+            GOOGLE REVIEWS
+          </div>
+          <div class="text-[30px] font-bold text-gray-900 leading-[1.15] mb-2.5">
+            856
+          </div>
+          <div class="text-[12px] font-medium text-tvRed">
+            +8.2%
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Full-Width Card: Feedback Overview -->
+      <div class="bg-white border border-gray-200 rounded-[10px] px-6 pt-5 pb-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6">
+          <h2 class="text-[16px] font-bold text-gray-900">
+            Feedback Overview
+          </h2>
+          <!-- Interactive Inspector Pill -->
+          <div id="barInspector" class="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1 rounded-full transition-all">
+            Week 10 (Highlighted): <span class="font-bold text-tvRed">148 responses</span>
+          </div>
+        </div>
+
+        <!-- 12-Bar Vertical Chart -->
+        <div id="feedbackChart" class="h-[115px] grid grid-cols-12 items-end gap-2 sm:gap-4 px-1" role="img" aria-label="12-week feedback overview bar chart">
+          <!-- Bars injected dynamically via JS -->
+        </div>
+
+        <!-- Footer Caption -->
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-2 text-[12px] text-gray-500">
+          <span>Weekly feedback activity · Illustrative data</span>
+          <span class="text-[11px] text-gray-400">Click any bar to inspect &amp; highlight</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Create Survey Modal -->
+  <div id="surveyModal" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="modalHeading">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="modalHeading" class="text-lg font-bold text-gray-900">Create New Survey</h3>
+        <button type="button" id="closeSurveyModalBtn" class="text-gray-400 hover:text-gray-700 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <p class="text-[13px] text-gray-500 mb-4">
+        Launch a new guest feedback survey for your tables or digital receipts.
+      </p>
+
+      <form id="surveyForm" class="space-y-4">
+        <div>
+          <label for="surveyName" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+            Survey Title
+          </label>
+          <input id="surveyName" type="text" required placeholder="e.g., Weekend Dinner Experience" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+
+        <div>
+          <label for="surveyVenue" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">
+            Target Venue
+          </label>
+          <select id="surveyVenue" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] bg-white focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
+            <option value="All Venues">All Venues (3 Locations)</option>
+            <option value="Downtown Flagship">Downtown Flagship</option>
+            <option value="Westside Bistro">Westside Bistro</option>
+            <option value="Harborfront Kitchen">Harborfront Kitchen</option>
+          </select>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" id="cancelSurveyBtn" class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">
+            Cancel
+          </button>
+          <button type="submit" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors">
+            Publish Survey
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-tvDark text-white text-xs font-medium px-4 py-3 rounded-[8px] shadow-lg border border-neutral-800 transform translate-y-16 opacity-0 transition-all duration-200 pointer-events-none z-50 flex items-center gap-2.5">
+    <span class="w-2 h-2 rounded-full bg-tvRed"></span>
+    <span id="toastMessage">Action completed</span>
+  </div>
+
+  <script>
+    // Weekly feedback dataset matching the exact bar proportions from the screenshot
+    // Bar 10 (index 9) is highlighted in crimson red (#c8102e) by default
+    const weeklyData = [
+      { week: 'Week 1', count: 52, heightPct: 33 },
+      { week: 'Week 2', count: 78, heightPct: 50 },
+      { week: 'Week 3', count: 62, heightPct: 40 },
+      { week: 'Week 4', count: 112, heightPct: 72 },
+      { week: 'Week 5', count: 86, heightPct: 55 },
+      { week: 'Week 6', count: 132, heightPct: 85 },
+      { week: 'Week 7', count: 104, heightPct: 67 },
+      { week: 'Week 8', count: 124, heightPct: 80 },
+      { week: 'Week 9', count: 80, heightPct: 51 },
+      { week: 'Week 10', count: 148, heightPct: 95 }, // Highlighted crimson red bar
+      { week: 'Week 11', count: 112, heightPct: 72 },
+      { week: 'Week 12', count: 134, heightPct: 86 }
+    ];
+
+    let activeBarIndex = 9; // 10th bar (0-indexed 9)
+
+    const chartContainer = document.getElementById('feedbackChart');
+    const barInspector = document.getElementById('barInspector');
+
+    function renderBars() {
+      chartContainer.innerHTML = '';
+      weeklyData.forEach((item, index) => {
+        const isHighlighted = index === activeBarIndex;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'h-full flex items-end group';
+
+        const bar = document.createElement('button');
+        bar.type = 'button';
+        bar.style.height = `${item.heightPct}%`;
+        bar.setAttribute('aria-label', `${item.week}: ${item.count} feedback responses`);
+        bar.title = `${item.week}: ${item.count} responses`;
+        bar.className = [
+          'w-full rounded-[4px] transition-all duration-200 cursor-pointer focus:outline-none',
+          isHighlighted
+            ? 'bg-tvRed hover:bg-tvRedHover shadow-xs'
+            : 'bg-tvBar hover:bg-gray-400'
+        ].join(' ');
+
+        // Hover preview
+        bar.addEventListener('mouseenter', () => {
+          updateInspector(index, false);
+        });
+
+        bar.addEventListener('mouseleave', () => {
+          updateInspector(activeBarIndex, true);
+        });
+
+        // Click to set active highlighted bar
+        bar.addEventListener('click', () => {
+          activeBarIndex = index;
+          renderBars();
+          updateInspector(index, true);
+        });
+
+        wrapper.appendChild(bar);
+        chartContainer.appendChild(wrapper);
+      });
+    }
+
+    function updateInspector(index, isSelected) {
+      const item = weeklyData[index];
+      const tag = isSelected ? 'Selected' : 'Preview';
+      barInspector.innerHTML = `${item.week} (${tag}): <span class="font-bold text-tvRed">${item.count} responses</span>`;
+    }
+
+    // Sidebar Navigation Interactivity
+    const sectionDescriptions = {
+      'Dashboard': {
+        subtitle: 'Restaurant performance overview',
+        banner: null
+      },
+      'Inbox': {
+        subtitle: 'Direct guest messages & unresolved tickets',
+        banner: 'Viewing Inbox summary — 24 unresolved guest responses require follow-up.'
+      },
+      'Surveys': {
+        subtitle: 'Active table & receipt feedback questionnaires',
+        banner: '4 active surveys currently collecting responses across your venues.'
+      },
+      'QR Codes': {
+        subtitle: 'Table tent & receipt QR code generator',
+        banner: '48 table QR codes active with 98.4% scan reliability.'
+      },
+      'Venues': {
+        subtitle: 'Connected restaurant locations',
+        banner: '3 venues connected: Downtown Flagship, Westside Bistro, and Harborfront Kitchen.'
+      },
+      'Google Reviews': {
+        subtitle: 'Public rating sync & automated review routing',
+        banner: '856 Google Reviews synced · 4.7 average star rating maintained.'
+      },
+      'Rewards': {
+        subtitle: 'Guest loyalty vouchers & thank-you incentives',
+        banner: '312 digital dessert & coffee vouchers redeemed this month.'
+      },
+      'Users': {
+        subtitle: 'Staff permissions & administrator access',
+        banner: '6 team members configured under Administrator & Venue Manager roles.'
+      }
+    };
+
+    function switchSection(sectionName, event) {
+      if (event) event.preventDefault();
+
+      // Update active styling on sidebar buttons
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        const isMatch = btn.getAttribute('data-nav') === sectionName;
+        if (isMatch) {
+          btn.classList.remove('text-gray-400', 'font-medium');
+          btn.classList.add('text-white', 'font-semibold');
+        } else {
+          btn.classList.remove('text-white', 'font-semibold');
+          btn.classList.add('text-gray-400', 'font-medium');
+        }
+      });
+
+      // Update page header & contextual banner
+      const info = sectionDescriptions[sectionName] || sectionDescriptions['Dashboard'];
+      document.getElementById('pageTitle').textContent = sectionName;
+      document.getElementById('pageSubtitle').textContent = info.subtitle;
+
+      const banner = document.getElementById('contextBanner');
+      const bannerText = document.getElementById('contextBannerText');
+      if (info.banner) {
+        bannerText.textContent = info.banner;
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+
+      // Close mobile drawer if open
+      closeMobileSidebar();
+    }
+
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-nav');
+        switchSection(target);
+      });
+    });
+
+    // Mobile Sidebar Drawer Controls
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+
+    function openMobileSidebar() {
+      sidebar.classList.remove('-translate-x-full');
+      sidebarBackdrop.classList.remove('hidden');
+    }
+
+    function closeMobileSidebar() {
+      sidebar.classList.add('-translate-x-full');
+      sidebarBackdrop.classList.add('hidden');
+    }
+
+    mobileMenuBtn.addEventListener('click', () => {
+      if (sidebar.classList.contains('-translate-x-full')) {
+        openMobileSidebar();
+      } else {
+        closeMobileSidebar();
+      }
+    });
+
+    sidebarBackdrop.addEventListener('click', closeMobileSidebar);
+
+    // Create Survey Modal Controls
+    const surveyModal = document.getElementById('surveyModal');
+    const openSurveyModalBtn = document.getElementById('openSurveyModalBtn');
+    const closeSurveyModalBtn = document.getElementById('closeSurveyModalBtn');
+    const cancelSurveyBtn = document.getElementById('cancelSurveyBtn');
+    const surveyForm = document.getElementById('surveyForm');
+    const surveyNameInput = document.getElementById('surveyName');
+
+    function openModal() {
+      surveyModal.classList.remove('hidden');
+      surveyModal.classList.add('flex');
+      setTimeout(() => surveyNameInput.focus(), 50);
+    }
+
+    function closeModal() {
+      surveyModal.classList.add('hidden');
+      surveyModal.classList.remove('flex');
+      surveyForm.reset();
+    }
+
+    openSurveyModalBtn.addEventListener('click', openModal);
+    closeSurveyModalBtn.addEventListener('click', closeModal);
+    cancelSurveyBtn.addEventListener('click', closeModal);
+
+    surveyModal.addEventListener('click', (e) => {
+      if (e.target === surveyModal) closeModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !surveyModal.classList.contains('hidden')) {
+        closeModal();
+      }
+    });
+
+    // Toast Helper
+    let toastTimer;
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      const toastMessage = document.getElementById('toastMessage');
+      toastMessage.textContent = message;
+      toast.classList.remove('translate-y-16', 'opacity-0');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.add('translate-y-16', 'opacity-0');
+      }, 3200);
+    }
+
+    surveyForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const title = surveyNameInput.value.trim();
+      const venue = document.getElementById('surveyVenue').value;
+      closeModal();
+      showToast(`Survey "${title}" published for ${venue}`);
+    });
+
+    // Initialize chart on load
+    renderBars();
+  </script>
+</body>
+</html>

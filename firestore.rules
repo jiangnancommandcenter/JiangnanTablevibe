@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // An admin is a signed-in user whose UID has a document in /admins.
+    // Create those documents by hand in the Firebase Console (Firestore → admins → doc id = user UID).
+    // A plain "request.auth != null" check is NOT enough: with email/password sign-in enabled,
+    // anyone can create an account using the public API key.
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function optionalString(d, field, maxLen) {
+      return !(field in d) || (d[field] is string && d[field].size() <= maxLen);
+    }
+
+    // Shape of a customer survey submission (also used by "Add review" on the dashboard)
+    function validSubmission(d) {
+      return d.keys().hasOnly(['branchId', 'branchName', 'customerName', 'comment', 'ratings',
+                               'atmosphereOpen', 'answers', 'staffMember', 'managerVisit',
+                               'dish', 'source', 'createdAt'])
+        && d.keys().hasAll(['branchId', 'ratings', 'createdAt'])
+        && d.branchId is string && d.branchId.size() > 0 && d.branchId.size() <= 50
+        && d.ratings is map
+        && d.ratings.overall is int && d.ratings.overall >= 1 && d.ratings.overall <= 5
+        && optionalString(d, 'branchName', 100)
+        && optionalString(d, 'customerName', 100)
+        && optionalString(d, 'comment', 2000)
+        && optionalString(d, 'staffMember', 100)
+        && optionalString(d, 'managerVisit', 200)
+        && optionalString(d, 'dish', 200)
+        && (!('answers' in d) || d.answers is map)
+        && (!('atmosphereOpen' in d) || d.atmosphereOpen is map)
+        && (!('source' in d) || isAdmin())   // only staff can record manual reviews
+        && d.createdAt == request.time;
+    }
+
+    function validBranch(d) {
+      return d.keys().hasOnly(['name', 'region', 'address', 'manager', 'status', 'createdAt', 'updatedAt'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+        && optionalString(d, 'region', 100)
+        && optionalString(d, 'address', 200)
+        && optionalString(d, 'manager', 100)
+        && d.status in ['active', 'inactive'];
+    }
+
+    // Staff profile. The photo must be one of OUR Cloudinary images (it's shown on the public survey).
+    function validEmployee(d) {
+      return d.keys().hasOnly(['name', 'position', 'branchId', 'photoUrl', 'photoPublicId', 'createdAt', 'updatedAt'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+        && optionalString(d, 'position', 100)
+        && d.branchId is string && d.branchId.size() <= 50
+        && (!('photoUrl' in d) || (d.photoUrl is string && d.photoUrl.size() <= 500
+            && d.photoUrl.matches('^https://res[.]cloudinary[.]com/macowfsm/image/upload/.*')))
+        && optionalString(d, 'photoPublicId', 300);
+    }
+
+    // ============================================
+    // BRANCHES - restaurant locations (doc id = slug referenced by surveys/employees)
+    // ============================================
+    match /branches/{branchId} {
+      allow read: if true;   // the public survey lists active branches
+      allow create, update: if isAdmin() && validBranch(request.resource.data)
+                            && branchId.size() <= 50;
+      allow delete: if false; // deactivate instead: old reviews reference the id
+    }
+
+    // ============================================
+    // ADMINS - allow-list of dashboard users (managed in the console only)
+    // ============================================
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ============================================
+    // SURVEYS - customer survey submissions
+    // ============================================
+    match /surveys/{docId} {
+      allow create: if validSubmission(request.resource.data);  // public: customers have no account
+      allow read: if isAdmin();                                  // customer data is private
+      // Staff may only reply to or flag a submission; the customer's answers never change
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reply', 'repliedAt', 'flagged'])
+        && optionalString(request.resource.data, 'reply', 1000)
+        && (!('flagged' in request.resource.data) || request.resource.data.flagged is bool);
+      allow delete: if false;
+    }
+
+    // ============================================
+    // VOUCHERS - 15% voucher emailed after the survey (no customer login)
+    // Doc id = the customer's lowercased email. Rules only allow *creating* a new doc,
+    // so a second voucher for the same email is a write to an existing doc → rejected.
+    // Each voucher must point at a real survey submitted in the last 15 minutes.
+    // Staff confirm ownership at the counter by asking to see the voucher email.
+    // ============================================
+    match /vouchers/{emailId} {
+      allow read: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['code', 'email', 'surveyId', 'branchId',
+                                                             'discountPercent', 'status', 'createdAt'])
+        && request.resource.data.email == emailId
+        && emailId.size() <= 254
+        && emailId.matches('^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,}$')   // lowercase, email-shaped
+        && request.resource.data.code is string && request.resource.data.code.size() == 8
+        && request.resource.data.discountPercent == 15
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.branchId is string && request.resource.data.branchId.size() <= 50
+        && request.resource.data.surveyId is string
+        && exists(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId))
+        && get(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId)).data.createdAt
+             > request.time - duration.value(15, 'm');
+      // Staff redeem once, within 1 calendar month (the email shows the exact date; 32 days
+      // here covers the longest month + the whole last day); the customer can never change it
+      allow update: if isAdmin()
+        && resource.data.status == 'active'
+        && request.time < resource.data.createdAt + duration.value(32, 'd')
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'redeemedAt', 'redeemedBy', 'redeemedBranchId'])
+        && request.resource.data.status == 'redeemed'
+        && request.resource.data.redeemedAt == request.time
+        && request.resource.data.redeemedBy == request.auth.uid
+        && request.resource.data.redeemedBranchId is string;
+      allow delete: if false;
+    }
+
+    // ============================================
+    // SURVEY CONFIG - star-rating categories ("Please rate the following items")
+    // ============================================
+    match /surveyConfig/{docId} {
+      allow read: if true;   // the public survey reads the categories
+      allow write: if isAdmin() && docId == 'ratingCategories'
+        && request.resource.data.keys().hasOnly(['title', 'categories', 'updatedAt'])
+        && request.resource.data.title is string && request.resource.data.title.size() <= 120
+        && request.resource.data.categories is list
+        && request.resource.data.categories.size() >= 1
+        && request.resource.data.categories.size() <= 10;
+    }
+
+    // ============================================
+    // SURVEY QUESTIONS - read by the public survey page
+    // ============================================
+    match /surveyQuestions/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ============================================
+    // EMPLOYEES - names are shown in the public survey's staff picker
+    // ============================================
+    match /employees/{docId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && validEmployee(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

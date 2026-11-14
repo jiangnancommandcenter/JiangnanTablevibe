@@ -1,0 +1,42 @@
+name: Firestore scheduled backup
+
+# BACKEND-10: free substitute for a Cloud Scheduler + Cloud Function (which require
+# Blaze). GitHub Actions' free tier gives this schedule to any repo at no cost. Requires
+# repo secrets: FIREBASE_SERVICE_ACCOUNT_JSON (paste the whole JSON file contents),
+# CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.
+on:
+  schedule:
+    - cron: '0 18 * * *' # daily at 18:00 UTC — adjust to your timezone/needs
+  workflow_dispatch: {} # lets you trigger an on-demand backup / restore-drill from the GitHub UI
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install firebase-admin cloudinary
+        working-directory: backend/scripts
+      - name: Write service account file
+        run: echo "$FIREBASE_SERVICE_ACCOUNT_JSON" > /tmp/sa.json
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      - name: Run backup
+        working-directory: backend/scripts
+        run: |
+          node backup-firestore.js \
+            --sa /tmp/sa.json \
+            --cloud-name "$CLOUDINARY_CLOUD_NAME" \
+            --api-key "$CLOUDINARY_API_KEY" \
+            --api-secret "$CLOUDINARY_API_SECRET" \
+            --retention-days 30
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+      - name: Clean up service account file
+        if: always()
+        run: rm -f /tmp/sa.json

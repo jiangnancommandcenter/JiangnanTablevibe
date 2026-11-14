@@ -1,0 +1,9 @@
+{
+  "name": "tablevibe-backend-scripts",
+  "private": true,
+  "description": "Local/CI-only admin scripts that hold real secrets (Admin SDK, Cloudinary API secret). Never deployed, never shipped to the browser.",
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "cloudinary": "^2.0.0"
+  }
+}
