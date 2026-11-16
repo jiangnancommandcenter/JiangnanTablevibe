@@ -1,0 +1,67 @@
+<!--
+  Jiang Nan store kiosk invite — paste this into a NEW EmailJS template:
+  Email Templates → Create New Template → Content → "Edit Content" → Code editor.
+  Settings on the same template:
+    Subject:   Set your Jiang Nan voucher kiosk password — {{branch_name}}
+    To Email:  {{to_email}}
+  Then copy the template's ID into js/firebase-config.js → EMAILJS_STORE_INVITE_TEMPLATE_ID.
+  Variables sent by the dashboard (Account Creation):
+    {{to_email}} {{branch_name}} {{invite_url}} {{expires}}
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f4;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#222222;">
+        <tr>
+          <td align="center" style="padding:32px 24px 8px;">
+            <img src="https://jiangnancommandcenter.github.io/JiangnanTablevibe/images/jiangnan-logo.png" alt="Jiang Nan" width="120" style="display:block;width:120px;max-width:120px;height:auto;border:0;">
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:20px 24px 0;font-size:20px;line-height:28px;font-weight:bold;">
+            Set your kiosk password
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:12px 28px 0;font-size:15px;line-height:22px;">
+            You can now redeem customer vouchers for<br>
+            <strong>{{branch_name}}</strong>.
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:16px 28px 0;font-size:15px;line-height:22px;">
+            Your kiosk login is this email: <strong>{{to_email}}</strong>.<br>
+            Click below and choose your password. That's it.
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:24px 24px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" bgcolor="#c8102e" style="border-radius:4px;">
+                  <a href="{{invite_url}}" target="_blank" style="display:inline-block;padding:12px 28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;border-radius:4px;">Set my password</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:20px 28px 0;font-size:13px;line-height:20px;color:#555555;">
+            This link works once and expires on <strong>{{expires}}</strong>.<br>
+            After that, sign in on the kiosk with this email and your password.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:24px 40px 0;">
+            <div style="border-top:1px solid #cccccc;height:1px;line-height:1px;font-size:1px;">&nbsp;</div>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:16px 28px 32px;font-size:12px;line-height:18px;color:#888888;">
+            Didn't expect this email? You can ignore it.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

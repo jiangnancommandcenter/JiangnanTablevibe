@@ -11,6 +11,18 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // A store (branch counter) account: a signed-in user whose UID has a document in /stores
+    // with the branch it redeems at: stores/{uid} = { branchId: 'banawe', name: '...' }.
+    // Created by hand in the Firebase Console. Stores can only look up and redeem vouchers (store.html).
+    function isStore() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/stores/$(request.auth.uid));
+    }
+
+    function storeBranch() {
+      return get(/databases/$(database)/documents/stores/$(request.auth.uid)).data.branchId;
+    }
+
     function optionalString(d, field, maxLen) {
       return !(field in d) || (d[field] is string && d[field].size() <= maxLen);
     }
@@ -19,7 +31,7 @@ service cloud.firestore {
     function validSubmission(d) {
       return d.keys().hasOnly(['branchId', 'branchName', 'customerName', 'comment', 'ratings',
                                'atmosphereOpen', 'answers', 'staffMember', 'managerVisit',
-                               'dish', 'source', 'createdAt'])
+                               'dish', 'source', 'survey', 'createdAt'])
         && d.keys().hasAll(['branchId', 'ratings', 'createdAt'])
         && d.branchId is string && d.branchId.size() > 0 && d.branchId.size() <= 50
         && d.ratings is map
@@ -33,6 +45,7 @@ service cloud.firestore {
         && (!('answers' in d) || d.answers is map)
         && (!('atmosphereOpen' in d) || d.atmosphereOpen is map)
         && (!('source' in d) || isAdmin())   // only staff can record manual reviews
+        && (!('survey' in d) || d.survey in ['dinein', 'delivery'])   // which survey it came from
         && d.createdAt == request.time;
     }
 
@@ -78,6 +91,63 @@ service cloud.firestore {
     }
 
     // ============================================
+    // STORES - branch counter accounts for the redeem kiosk (managed in the console only)
+    // ============================================
+    // Created by the store itself from an admin's invite link (store.html?invite=...), in ONE batch
+    // together with marking the invite 'active' — so each invite works once. Admins revoke by deleting.
+    match /stores/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['branchId', 'name', 'email', 'inviteId', 'createdAt'])
+        && request.resource.data.inviteId is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.createdAt == request.time
+        && usableInvite(request.resource.data.inviteId, request.resource.data.branchId)
+        && getAfter(/databases/$(database)/documents/storeInvites/$(request.resource.data.inviteId)).data.status == 'active'
+        && getAfter(/databases/$(database)/documents/storeInvites/$(request.resource.data.inviteId)).data.uid == uid;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // STORE INVITES - "Account Creation" on the dashboard. Doc id = the random token in the
+    // emailed link (the secret, like a password-reset link), so anyone holding the link can read it.
+    // ============================================
+    function usableInvite(inviteId, branchId) {
+      let inv = get(/databases/$(database)/documents/storeInvites/$(inviteId)).data;
+      return inv.status == 'invited'
+        && inv.expiresAt > request.time
+        && inv.email == request.auth.token.email
+        && inv.branchId == branchId;
+    }
+
+    function validInvite(d) {
+      return d.keys().hasOnly(['email', 'branchId', 'branchName', 'status', 'expiresAt', 'createdAt',
+                               'sentAt', 'uid', 'usedAt', 'revokedAt'])
+        && d.email is string && d.email.size() <= 254
+        && d.email.matches('^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,}$')
+        && d.branchId is string && d.branchId.size() > 0 && d.branchId.size() <= 50
+        && optionalString(d, 'branchName', 100)
+        && d.status in ['invited', 'active', 'revoked']
+        && d.expiresAt is timestamp;
+    }
+
+    match /storeInvites/{token} {
+      allow get: if true;
+      allow list, delete: if isAdmin();
+      allow create, update: if isAdmin() && token.size() >= 24 && validInvite(request.resource.data);
+      // The invited store accepts it once (same batch as creating stores/{uid})
+      allow update: if request.auth != null
+        && resource.data.status == 'invited'
+        && resource.data.expiresAt > request.time
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'uid', 'usedAt'])
+        && request.resource.data.status == 'active'
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.usedAt == request.time;
+    }
+
+    // ============================================
     // SURVEYS - customer survey submissions
     // ============================================
     match /surveys/{docId} {
@@ -107,13 +177,16 @@ service cloud.firestore {
 
     function validVoucherConfig(d) {
       return d.keys().hasOnly(['enabled', 'discountPercent', 'appliesTo', 'minSpend',
-                               'validityValue', 'validityUnit', 'updatedAt'])
+                               'validityValue', 'validityUnit', 'conditions', 'updatedAt'])
         && d.enabled is bool
         && d.discountPercent is int && d.discountPercent >= 1 && d.discountPercent <= 100
         && d.appliesTo is string && d.appliesTo.size() > 0 && d.appliesTo.size() <= 60
         && d.minSpend is int && d.minSpend >= 0 && d.minSpend <= 1000000
         && d.validityValue is int && d.validityValue >= 1 && d.validityValue <= 365
-        && d.validityUnit in ['days', 'weeks', 'months'];
+        && d.validityUnit in ['days', 'weeks', 'months']
+        // Conditions shown in the voucher email / redeem page (text only, 1-10 lines)
+        && (!('conditions' in d) || (d.conditions is list
+              && d.conditions.size() >= 1 && d.conditions.size() <= 10));
     }
 
     // Longest allowed validity in days (a little slack for month lengths, time zones and the whole last day)
@@ -144,7 +217,12 @@ service cloud.firestore {
     // Staff confirm ownership at the counter by asking to see the voucher email.
     // ============================================
     match /vouchers/{emailId} {
-      allow read: if isAdmin();
+      // Stores: one voucher at a time (by email = doc id, or by code with limit(1)),
+      // plus the vouchers redeemed at their own branch ("Today's redemptions"). No bulk listing.
+      allow get: if isAdmin() || isStore();
+      allow list: if isAdmin()
+        || (isStore() && (request.query.limit <= 1
+                          || resource.data.redeemedBranchId == storeBranch()));
       allow create: if request.resource.data.keys().hasOnly(['code', 'email', 'surveyId', 'branchId',
                                                              'discountPercent', 'appliesTo', 'minSpend',
                                                              'expiresAt', 'status', 'createdAt'])
@@ -161,8 +239,10 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId)).data.createdAt
              > request.time - duration.value(15, 'm');
       // Staff redeem once, before the voucher's expiry; the customer can never change it.
+      // Admins redeem at any branch; a store account only at its own branch.
       // Older vouchers have no expiresAt: they were valid for 1 calendar month (32 days covers it).
-      allow update: if isAdmin()
+      allow update: if (isAdmin()
+            || (isStore() && request.resource.data.redeemedBranchId == storeBranch()))
         && resource.data.status == 'active'
         && (('expiresAt' in resource.data)
               ? request.time <= resource.data.expiresAt
@@ -177,13 +257,14 @@ service cloud.firestore {
     }
 
     // ============================================
-    // SURVEY CONFIG - star-rating categories ("Please rate the following items")
+    // SURVEY CONFIG - star-rating categories ("Please rate the following items"):
+    //                 'ratingCategories' (dine-in) and 'deliveryRatingCategories' (delivery),
     //                 and the voucher offer settings (doc 'voucher')
     // ============================================
     match /surveyConfig/{docId} {
       allow read: if true;   // the public survey reads the categories and the voucher offer
       allow write: if isAdmin() && (
-        (docId == 'ratingCategories'
+        (docId in ['ratingCategories', 'deliveryRatingCategories']
           && request.resource.data.keys().hasOnly(['title', 'categories', 'updatedAt'])
           && request.resource.data.title is string && request.resource.data.title.size() <= 120
           && request.resource.data.categories is list
@@ -209,7 +290,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Default deny
+    // Default deny 
     match /{document=**} {
       allow read, write: if false;
     }

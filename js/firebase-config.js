@@ -10,6 +10,12 @@ const RECAPTCHA_V3_SITE_KEY = "";
 const EMAILJS_PUBLIC_KEY = "TIDREMAUaAyrBfCd2";               // Account → General → Public Key
 const EMAILJS_SERVICE_ID = "service_o70h87o";                 // Email Services → your service's ID
 const EMAILJS_VOUCHER_TEMPLATE_ID = "template_osq0o7n";       // Email Templates → the voucher template's ID
+// Store kiosk invite (dashboard → Account Creation). Template HTML: email-templates/store-invite-email.html.
+// Leave the template empty to turn invite emails off: the dashboard then copies the link for you to send.
+const EMAILJS_STORE_INVITE_SERVICE_ID = "service_ljl4e96";
+const EMAILJS_STORE_INVITE_TEMPLATE_ID = "template_pw9egup";
+// Only if that service is in a DIFFERENT EmailJS account: its Public Key (empty = same account as above)
+const EMAILJS_STORE_INVITE_PUBLIC_KEY = "";
 
 // ---- Cloudinary (employee profile photos) ----
 // Browser uploads use an UNSIGNED upload preset. Never put the API key/secret (CLOUDINARY_URL)

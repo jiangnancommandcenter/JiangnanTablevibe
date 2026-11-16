@@ -1,12 +1,17 @@
 // Survey submissions (customer reviews) — readable only by signed-in staff
 let surveySubmissions = [];
 let selectedStaffFilter = "All";
+let selectedSurveyFilter = "All"; // "All" | "dinein" | "delivery" (toolbar "Type" select)
 
-// Submissions in the current branch scope
+// Dine-in / Delivery filter (older submissions have no `survey` field → dine-in)
+function matchesSurveyFilter(s) {
+    return selectedSurveyFilter === "All" || surveyTypeOf(s) === selectedSurveyFilter;
+}
+
+// Submissions in the current branch + type scope
 function scopedSubmissions() {
-    return selectedBranchId === "All"
-        ? surveySubmissions
-        : surveySubmissions.filter(s => s.branchId === selectedBranchId);
+    return surveySubmissions.filter(s =>
+        matchesSurveyFilter(s) && (selectedBranchId === "All" || s.branchId === selectedBranchId));
 }
 
 function overallRating(s) {
@@ -16,7 +21,7 @@ function overallRating(s) {
 
 // Per-branch stats computed from live submissions
 function branchStats(branchId) {
-    const subs = surveySubmissions.filter(s => s.branchId === branchId);
+    const subs = surveySubmissions.filter(s => s.branchId === branchId && matchesSurveyFilter(s));
     const rated = subs.map(overallRating).filter(r => r !== null);
     const latest = subs
         .slice()

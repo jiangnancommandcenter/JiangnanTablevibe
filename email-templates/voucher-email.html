@@ -6,8 +6,10 @@
     To Email:  {{to_email}}
   Variables sent by review.html:
     {{customer_name}} {{discount}} {{applies_to}} {{min_spend_line}} {{valid_from}} {{valid_until}} {{redeem_url}}
-    {{google_review_url}}
+    {{google_review_url}} {{{conditions_html}}}
   The offer comes from the dashboard's Vouchers → "Voucher settings" card.
+  The conditions list too (Voucher settings → Conditions). {{{conditions_html}}} uses THREE braces so
+  EmailJS inserts the line breaks as HTML; review.html already escapes the text.
   {{google_review_url}} is the branch's link from the dashboard's Branches → Edit → Google review link.
   The voucher code is NOT printed here on purpose: it only appears after tapping
   "Redeem Gift" (voucher.html reads it from {{redeem_url}}).
@@ -56,12 +58,7 @@
         </tr>
         <tr>
           <td align="center" style="padding:8px 24px 0;font-size:14px;line-height:22px;color:#333333;">
-            - Valid from {{valid_from}} to {{valid_until}}<br>
-            - Not valid with other promotions or discounts<br>
-            - Valid for dine-in only at all Jiang Nan Hotpot branches<br>
-            - {{min_spend_line}}<br>
-            - Simply show your email confirmation or unique code to our staff before payment<br>
-            - One-time use only
+            {{{conditions_html}}}
           </td>
         </tr>
         <tr>

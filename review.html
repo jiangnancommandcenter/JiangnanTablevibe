@@ -39,11 +39,11 @@
     #stepHost.is-entering { opacity: 0; transform: translateX(12px); }
   </style>
   <!-- ?v= forces browsers to fetch the current files; bump it whenever these change -->
-  <script src="js/firebase-config.js?v=20261114k"></script>
+  <script src="js/firebase-config.js?v=20261116g"></script>
   <script src="js/branches.js?v=20261114k"></script>
   <script src="js/employees.js?v=20261114k"></script>
-  <script src="js/ratingConfig.js?v=20261114k"></script>
-  <script src="js/voucherConfig.js?v=20261114m"></script>
+  <script src="js/ratingConfig.js?v=20261116d"></script>
+  <script src="js/voucherConfig.js?v=20261116a"></script>
 </head>
 <body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
 
@@ -53,7 +53,7 @@
       <img src="images/jiangnan-logo.png" alt="Jiang Nan Hotpot" class="h-[42px] w-[42px] object-contain shrink-0">
       <div class="min-w-0">
         <div class="font-bold text-[16px] tracking-[0.02em] text-gray-900 leading-tight">Jiang Nan Hotpot</div>
-        <div class="text-[11px] text-gray-500 leading-tight truncate">Verified Diner Experience Survey</div>
+        <div id="surveySubtitle" class="text-[11px] text-gray-500 leading-tight truncate">Verified Diner Experience Survey</div>
       </div>
     </div>
   </header>
@@ -137,6 +137,17 @@
     };
     // The star-rating categories and their title come from js/ratingConfig.js (edited on the dashboard)
 
+    // ---------- Which survey: dine-in (default) or delivery (?type=delivery, from the delivery QR) ----------
+    // Delivery: branch → delivery ratings → feedback → the admin's delivery questions (no atmosphere/staff).
+    const SURVEY_TYPE = new URLSearchParams(location.search).get("type") === "delivery" ? "delivery" : "dinein";
+    const IS_DELIVERY = SURVEY_TYPE === "delivery";
+    const activeRatings = () => ratingConfigFor(SURVEY_TYPE);
+    if (IS_DELIVERY) {
+      labels.branchTitle = "Which branch did your order come from?";
+      document.getElementById("surveySubtitle").textContent = "Delivery Experience Survey";
+      document.title = "Jiang Nan Hotpot — Rate Your Delivery";
+    }
+
     // ---------- Preview mode (?preview=1) — the dashboard's phone simulator ----------
     // Display only: nothing is ever saved, no voucher is created or emailed, the
     // "already submitted" lock is ignored, and questions update live as the admin edits them.
@@ -203,7 +214,7 @@
     // After submitting, a refresh shows the same thank-you screen instead of a new survey.
     // This is a deterrent on the customer's own phone; the real voucher protection is in
     // the Firestore rules (one voucher per email).
-    const DONE_KEY = "dpSurveyDone";
+    const DONE_KEY = IS_DELIVERY ? "dpSurveyDone:delivery" : "dpSurveyDone"; // separate lock per survey
     const DONE_LOCK_HOURS = 24;            // the device can submit again after this
     const VOUCHER_WINDOW_MIN = 14;         // rules accept a voucher up to 15 min after the survey
 
@@ -263,9 +274,13 @@
     function getSteps() {
       const steps = [];
       if (!skipBranchStep) steps.push("branch");
-      steps.push("ratings", "atmo-open"); // all star-rating categories on one screen
-      steps.push("comment", "staff");
-      if (selectedStaffMember) steps.push("staff-rate");
+      if (IS_DELIVERY) {
+        steps.push("ratings", "comment"); // delivery: no atmosphere or staff questions
+      } else {
+        steps.push("ratings", "atmo-open"); // all star-rating categories on one screen
+        steps.push("comment", "staff");
+        if (selectedStaffMember) steps.push("staff-rate");
+      }
       loadedQuestions.forEach(q => steps.push("q:" + q.id));
       return steps;
     }
@@ -283,7 +298,7 @@
 
     function canAdvance(key) {
       if (key === "branch") return activeBranches().some(b => b.id === selectedBranchId);
-      if (key === "ratings") return ratingConfig.categories.every(c => ratingValues[c.id] >= 1 && ratingValues[c.id] <= 5);
+      if (key === "ratings") return activeRatings().categories.every(c => ratingValues[c.id] >= 1 && ratingValues[c.id] <= 5);
       if (key.startsWith("q:")) {
         const q = loadedQuestions.find(x => "q:" + x.id === key);
         return !q || q.type !== "multiple_choice" || !!surveyAnswers[q.id];
@@ -396,7 +411,7 @@
 
       // 2) Star ratings: every category on one screen ("Please rate the following items")
       if (key === "ratings") {
-        const body = ratingConfig.categories.map(c => {
+        const body = activeRatings().categories.map(c => {
           const v = ratingValues[c.id] || 0;
           let starBtns = "";
           for (let i = 1; i <= 5; i++) {
@@ -418,7 +433,7 @@
             </div>`;
         }).join("");
         return shell({
-          title: ratingConfig.title,
+          title: activeRatings().title,
           hint: "Tap the stars for each item.",
           body: `<div class="-mt-3">${body}</div>`,
           footer: canAdvance("ratings") ? nextButton() : ""
@@ -466,12 +481,12 @@
       if (key === "comment") {
         return shell({
           title: labels.commentTitle,
-          hint: "Tell us what you loved or what we can improve.",
+          hint: IS_DELIVERY ? "Tell us about the food, packaging and delivery." : "Tell us what you loved or what we can improve.",
           body: `
             <div class="space-y-4">
               <div>
                 <label for="commentInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Your review</label>
-                <textarea id="commentInput" data-field="customerComment" rows="5" maxlength="2000" placeholder="Favorite dishes, service, ambiance..." class="${INPUT}">${escapeHtml(customerComment)}</textarea>
+                <textarea id="commentInput" data-field="customerComment" rows="5" maxlength="2000" placeholder="${IS_DELIVERY ? "Food quality, packaging, rider, delivery time..." : "Favorite dishes, service, ambiance..."}" class="${INPUT}">${escapeHtml(customerComment)}</textarea>
               </div>
               <div>
                 <label for="nameInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Your name <span class="normal-case font-normal text-gray-400">(optional)</span></label>
@@ -673,8 +688,12 @@
         const validFrom = formatVoucherDate(now);
         const validUntil = formatVoucherDate(expires);
         const firstName = (customerNameText || "").trim() || "there";
+        // Conditions from Voucher settings, placeholders filled in ("Valid from … to …" first)
+        const conditions = fillVoucherConditions(cfg, { validFrom, validUntil });
         const redeemUrl = new URL(VOUCHER_PAGE, location.href);
-        redeemUrl.search = new URLSearchParams({ c: code, n: firstName, d: String(cfg.discountPercent), a: cfg.appliesTo }).toString();
+        const params = new URLSearchParams({ c: code, n: firstName, d: String(cfg.discountPercent), a: cfg.appliesTo });
+        conditions.forEach(line => params.append("k", line)); // the redeem page lists them as sent
+        redeemUrl.search = params.toString();
         await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_VOUCHER_TEMPLATE_ID, {
           to_email: email,
           customer_name: firstName,
@@ -682,6 +701,7 @@
           discount: cfg.discountPercent + "%",
           applies_to: cfg.appliesTo,
           min_spend_line: minSpendLine(cfg.minSpend, cfg.appliesTo),
+          conditions_html: voucherConditionsHtml(conditions), // template: {{{conditions_html}}}
           // Set per branch in the dashboard: Branches → Edit → Google review link
           google_review_url: branchGoogleReviewUrl(branchId),
           valid_from: validFrom,
@@ -841,7 +861,7 @@
 
     // Rating categories changed on the dashboard (live): drop answers for removed categories, redraw
     window.onRatingConfigChanged = () => {
-      const ids = new Set(ratingConfig.categories.map(c => c.id));
+      const ids = new Set(activeRatings().categories.map(c => c.id));
       Object.keys(ratingValues).forEach(id => { if (!ids.has(id)) delete ratingValues[id]; });
       if (!finished) render();
     };
@@ -879,7 +899,7 @@
       const branchObj = branches.find(b => b.id === selectedBranchId);
       // Only the categories currently on the survey (keys = category ids, e.g. ratings.overall)
       const ratings = {};
-      ratingConfig.categories.forEach(c => { ratings[c.id] = ratingValues[c.id]; });
+      activeRatings().categories.forEach(c => { ratings[c.id] = ratingValues[c.id]; });
       if (selectedStaffMember && staffRating > 0) ratings.staffService = staffRating;
 
       if (PREVIEW) {
@@ -895,17 +915,21 @@
       const submitBtn = stepHost.querySelector('[data-action="submit"]');
       if (submitBtn) submitBtn.disabled = true;
       try {
-        const surveyRef = await db.collection("surveys").add({
+        const submission = {
           branchId: selectedBranchId,
           branchName: branchObj ? branchObj.name : selectedBranchId,
           customerName: customerName.trim() || "Anonymous",
           comment: customerComment.trim(),
           ratings,
-          atmosphereOpen: { rating: atmosphereOpenStar, comment: atmosphereOpenText.trim() },
           answers: surveyAnswers,
-          staffMember: selectedStaffMember || "",
+          survey: SURVEY_TYPE,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        if (!IS_DELIVERY) { // dine-in only questions
+          submission.atmosphereOpen = { rating: atmosphereOpenStar, comment: atmosphereOpenText.trim() };
+          submission.staffMember = selectedStaffMember || "";
+        }
+        const surveyRef = await db.collection("surveys").add(submission);
         lastSummary = {
           branch: branchObj ? branchObj.name : selectedBranchId,
           branchId: selectedBranchId,
@@ -953,7 +977,7 @@
         const snapshot = await db.collection("surveyQuestions").orderBy("order", "asc").get();
         loadedQuestions = snapshot.docs
           .map(doc => ({ id: doc.id, ...doc.data() }))
-          .filter(q => q.visible !== false); // hidden on the dashboard → not asked
+          .filter(q => q.visible !== false && surveyTypeOf(q) === SURVEY_TYPE); // hidden → not asked; this survey's only
       } catch (error) {
         console.error("Error loading survey questions:", error);
         loadedQuestions = [];
@@ -967,7 +991,7 @@
         db.collection("surveyQuestions").orderBy("order", "asc").onSnapshot(snapshot => {
           loadedQuestions = snapshot.docs
             .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(q => q.visible !== false);
+            .filter(q => q.visible !== false && surveyTypeOf(q) === SURVEY_TYPE);
           render();
         }, error => console.error("Preview: error listening to survey questions:", error));
         return;

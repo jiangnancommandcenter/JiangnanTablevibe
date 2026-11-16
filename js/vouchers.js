@@ -5,37 +5,12 @@
 // card here and stored by js/voucherConfig.js. Each voucher keeps its own deal and expiresAt.
 // The Firestore rules enforce: admin-only list/read, single redeem, before expiry.
 
-// Deal of an existing voucher (older vouchers predate these fields)
-const LEGACY_APPLIES_TO = "Ala Carte Items";
-function voucherDeal(v) {
-    const pct = v.discountPercent || 5;
-    const applies = v.appliesTo || LEGACY_APPLIES_TO;
-    const min = typeof v.minSpend === "number" ? v.minSpend : null;
-    return { pct, applies, min, text: `${pct}% off ${applies}` + (min ? ` · min ${formatPeso(min)}` : "") };
-}
-
+// voucherDeal / voucherCreated / voucherExpiry / voucherState live in js/voucherConfig.js
+// (shared with the store kiosk, store.html).
 
 let vouchers = [];
 let vouchersLoaded = false;
 let lookedUpVouchers = null; // results of the last "Find" (null = nothing searched yet)
-
-function voucherCreated(v) {
-    return v.createdAt && typeof v.createdAt.toDate === "function" ? v.createdAt.toDate() : null;
-}
-
-function voucherExpiry(v) {
-    if (v.expiresAt && typeof v.expiresAt.toDate === "function") return v.expiresAt.toDate();
-    const c = voucherCreated(v);
-    // Older vouchers (no expiresAt) were valid for 1 calendar month
-    return c ? voucherExpiryFrom(c, { validityValue: 1, validityUnit: "months" }) : null;
-}
-
-function voucherState(v) {
-    if (v.status === "redeemed") return "Redeemed";
-    const exp = voucherExpiry(v);
-    if (exp && exp < new Date()) return "Expired";
-    return "Active";
-}
 
 function subscribeToVouchers() {
     if (window.unsubscribeFromVouchersFn) window.unsubscribeFromVouchersFn();
@@ -215,8 +190,54 @@ function readVoucherSettingsForm() {
         appliesTo: document.getElementById("vsAppliesTo").value.trim(),
         minSpend: Number(document.getElementById("vsMinSpend").value),
         validityValue: Number(document.getElementById("vsValidityValue").value),
-        validityUnit: document.getElementById("vsValidityUnit").value
+        validityUnit: document.getElementById("vsValidityUnit").value,
+        conditions: [...document.querySelectorAll("#vsConditionsList input")]
+            .map(i => i.value.trim())
+            .filter(Boolean)
     };
+}
+
+const TRASH_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+
+function addConditionRow(text) {
+    const row = document.createElement("div");
+    row.className = "flex gap-2";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = VOUCHER_CONDITION_MAX_LEN;
+    input.value = text;
+    input.setAttribute("aria-label", "Condition");
+    input.className = "flex-1 min-w-0 px-3 py-2 text-[14px] bg-gray-50 border border-gray-200 rounded-[6px] focus:outline-none focus:bg-white focus:border-tvRed focus:ring-1 focus:ring-tvRed";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.dataset.action = "remove-condition";
+    del.title = "Remove condition";
+    del.setAttribute("aria-label", "Remove condition");
+    del.className = "shrink-0 w-10 flex items-center justify-center rounded-[6px] text-gray-400 hover:text-tvRed hover:bg-gray-50";
+    del.innerHTML = TRASH_ICON;
+    row.append(input, del);
+    document.getElementById("vsConditionsList").appendChild(row);
+}
+
+function renderConditionRows(list) {
+    document.getElementById("vsConditionsList").innerHTML = "";
+    list.forEach(addConditionRow);
+}
+
+// "+" / Enter in the "Add a condition" box
+function addConditionFromInput() {
+    const input = document.getElementById("vsConditionAdd");
+    const text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    if (document.querySelectorAll("#vsConditionsList input").length >= VOUCHER_MAX_CONDITIONS) {
+        showToast(`At most ${VOUCHER_MAX_CONDITIONS} conditions.`);
+        return;
+    }
+    addConditionRow(text);
+    input.value = "";
+    input.focus();
+    voucherSettingsDirty = true;
+    updateVoucherSettingsPreview();
 }
 
 function fillVoucherSettingsForm(c) {
@@ -226,6 +247,7 @@ function fillVoucherSettingsForm(c) {
     document.getElementById("vsMinSpend").value = c.minSpend;
     document.getElementById("vsValidityValue").value = c.validityValue;
     document.getElementById("vsValidityUnit").value = c.validityUnit;
+    renderConditionRows(c.conditions);
     updateVoucherSettingsPreview();
 }
 
@@ -237,12 +259,17 @@ function voucherSettingsError(f) {
     if (!Number.isInteger(f.minSpend) || f.minSpend < 0 || f.minSpend > 1000000) return "Minimum spend must be a whole number from 0 to 1,000,000 (0 = no minimum).";
     const max = VOUCHER_UNIT_MAX[f.validityUnit];
     if (!Number.isInteger(f.validityValue) || f.validityValue < 1 || f.validityValue > max) return `Validity must be 1 to ${max} ${f.validityUnit}.`;
+    if (!f.conditions.length) return "Add at least one condition.";
+    if (f.conditions.length > VOUCHER_MAX_CONDITIONS) return `At most ${VOUCHER_MAX_CONDITIONS} conditions.`;
+    if (f.conditions.some(c => c.length > VOUCHER_CONDITION_MAX_LEN)) return `Each condition can be at most ${VOUCHER_CONDITION_MAX_LEN} characters.`;
     return "";
 }
 
 function updateVoucherSettingsPreview() {
     const f = readVoucherSettingsForm();
     document.getElementById("vsEnabledLabel").textContent = f.enabled ? "On" : "Off";
+    const count = document.querySelectorAll("#vsConditionsList input").length;
+    document.getElementById("vsConditionAddBtn").disabled = count >= VOUCHER_MAX_CONDITIONS;
     const el = document.getElementById("vsPreview");
     const err = voucherSettingsError(f);
     if (err) {
@@ -251,9 +278,8 @@ function updateVoucherSettingsPreview() {
         return;
     }
     el.className = "text-[12.5px] text-gray-600";
-    el.textContent = f.enabled
-        ? `New vouchers: ${f.discountPercent}% off ${f.appliesTo} · ${f.minSpend > 0 ? "min " + formatPeso(f.minSpend) : "no minimum spend"} · valid ${validityLabel(f)} from the day it's sent.`
-        : "Vouchers are paused: customers can still leave reviews, but no voucher is offered.";
+    // Only errors and the "paused" note are shown here
+    el.textContent = f.enabled ? "" : "Vouchers are paused: customers can still leave reviews, but no voucher is offered.";
 }
 
 async function saveVoucherSettings() {
@@ -287,6 +313,21 @@ document.addEventListener("DOMContentLoaded", () => {
     settingsForm.addEventListener("input", () => { voucherSettingsDirty = true; updateVoucherSettingsPreview(); });
     settingsForm.addEventListener("change", () => { voucherSettingsDirty = true; updateVoucherSettingsPreview(); });
     settingsForm.addEventListener("submit", e => { e.preventDefault(); saveVoucherSettings(); });
+    settingsForm.addEventListener("click", e => {
+        const btn = e.target.closest("[data-action]");
+        if (!btn) return;
+        if (btn.dataset.action === "remove-condition") {
+            btn.parentElement.remove();
+            voucherSettingsDirty = true;
+            updateVoucherSettingsPreview();
+        } else if (btn.dataset.action === "add-condition") {
+            addConditionFromInput();
+        }
+    });
+    // Enter in "Add a condition" adds it instead of submitting the form
+    document.getElementById("vsConditionAdd").addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); addConditionFromInput(); }
+    });
     document.getElementById("voucherLookupForm").addEventListener("submit", e => {
         e.preventDefault();
         findVoucher(document.getElementById("voucherCodeInput").value);

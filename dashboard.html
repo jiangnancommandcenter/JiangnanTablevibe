@@ -11,6 +11,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4.4.1/dist/email.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -65,15 +66,16 @@
     }, true);
   </script>
   <!-- ?v= forces browsers to fetch the current files; bump it whenever these change -->
-  <script src="js/firebase-config.js?v=20261114k"></script>
+  <script src="js/firebase-config.js?v=20261116g"></script>
   <script src="js/branches.js?v=20261114k"></script>
   <script src="js/employees.js?v=20261114k"></script>
-  <script src="js/ratingConfig.js?v=20261114k"></script>
-  <script src="js/surveyQuestions.js?v=20261114k"></script>
-  <script src="js/dashboard.js?v=20261114k"></script>
-  <script src="js/voucherConfig.js?v=20261114m"></script>
-  <script src="js/vouchers.js?v=20261114m"></script>
-  <script src="js/reviewsInsights.js?v=20261114k"></script>
+  <script src="js/ratingConfig.js?v=20261116d"></script>
+  <script src="js/surveyQuestions.js?v=20261116d"></script>
+  <script src="js/dashboard.js?v=20261116d"></script>
+  <script src="js/voucherConfig.js?v=20261116a"></script>
+  <script src="js/vouchers.js?v=20261116a"></script>
+  <script src="js/reviewsInsights.js?v=20261116d"></script>
+  <script src="js/storeAccounts.js?v=20261116g"></script>
 </head>
 <body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
 
@@ -217,6 +219,14 @@
                 <span>Survey Questions</span>
               </button>
             </li>
+            <li>
+              <button type="button" data-nav="accounts" class="nav-btn w-full flex items-center gap-3 px-5 py-2.5 text-[13.5px] font-medium text-gray-400 hover:text-white hover:bg-tvDarkHover transition-colors text-left">
+                <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line>
+                </svg>
+                <span>Account Creation</span>
+              </button>
+            </li>
           </ul>
         </div>
       </div>
@@ -259,6 +269,14 @@
           <label for="branchSelect" class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase shrink-0">Branch</label>
           <select id="branchSelect" class="text-[13px] font-semibold text-gray-900 bg-white border border-gray-300 rounded-[6px] px-2.5 py-1.5 focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed cursor-pointer min-w-0">
             <option value="All">All Branches (Network Wide)</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2 px-1">
+          <label for="surveyTypeSelect" class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase shrink-0">Type</label>
+          <select id="surveyTypeSelect" class="text-[13px] font-semibold text-gray-900 bg-white border border-gray-300 rounded-[6px] px-2.5 py-1.5 focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed cursor-pointer">
+            <option value="All">All (Dine-in + Delivery)</option>
+            <option value="dinein">Dine-in</option>
+            <option value="delivery">Delivery</option>
           </select>
         </div>
         <div id="periodWrap" class="hidden flex items-center gap-2 px-1">
@@ -416,6 +434,19 @@
               </div>
             </div>
           </div>
+          <!-- Conditions listed in the voucher email and on the Redeem Gift page -->
+          <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-x-6 gap-y-2 mt-5 pt-5 border-t border-gray-100">
+            <div>
+              <span class="block text-[11px] font-semibold uppercase tracking-wider text-gray-600">Conditions</span>
+            </div>
+            <div class="min-w-0">
+              <div id="vsConditionsList" class="space-y-2"></div>
+              <div class="flex gap-2 mt-2">
+                <input id="vsConditionAdd" type="text" maxlength="200" placeholder="Add a condition" aria-label="New condition" class="flex-1 min-w-0 px-3 py-2 text-[14px] border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+                <button id="vsConditionAddBtn" type="button" data-action="add-condition" aria-label="Add condition" title="Add condition" class="shrink-0 w-10 flex items-center justify-center rounded-[6px] border border-gray-300 text-tvRed text-[20px] leading-none hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+              </div>
+            </div>
+          </div>
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
             <p id="vsPreview" class="text-[12.5px] text-gray-600"></p>
             <button id="vsSaveBtn" type="submit" class="shrink-0 px-5 py-2.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[13px] font-semibold transition-colors shadow-sm disabled:opacity-60">Save settings</button>
@@ -425,6 +456,7 @@
         <div class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 mb-[18px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
           <h2 class="text-[16px] font-bold text-gray-900">Redeem a voucher</h2>
           <p class="text-[12px] text-gray-500 mt-0.5">Type the voucher code or the customer&#39;s email. Before redeeming, ask to see the voucher email on their phone and check the minimum spend. Each voucher works once, before its expiry date.</p>
+          <p class="text-[12px] text-gray-500 mt-1">Branch counters use the separate <a href="store.html" target="_blank" class="font-semibold text-tvRed hover:underline">store redeem kiosk</a> (store accounts: Firestore <code>stores</code> collection).</p>
           <form id="voucherLookupForm" action="javascript:void(0)" class="mt-4 flex flex-col sm:flex-row gap-2">
             <input id="voucherCodeInput" type="text" maxlength="254" autocomplete="off" spellcheck="false" placeholder="Code (e.g. K7M2QX9P) or email" class="flex-1 min-w-0 px-3.5 py-2.5 text-[15px] font-mono tracking-[0.08em] border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
             <select id="voucherRedeemBranch" class="px-3 py-2.5 text-[13px] bg-white border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></select>
@@ -452,6 +484,31 @@
         </div>
       </section>
 
+      <!-- ===== ACCOUNT CREATION VIEW (js/storeAccounts.js) ===== -->
+      <section id="accountsView" class="hidden">
+        <form id="storeInviteForm" action="javascript:void(0)" class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 mb-[18px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+          <h2 class="text-[16px] font-bold text-gray-900">Invite a store</h2>
+          <p class="text-[12px] text-gray-500 mt-0.5">The store gets an email with a link to set its kiosk password; the email you type here is its login (<a href="store.html" target="_blank" class="font-semibold text-tvRed hover:underline">store redeem kiosk</a>). The link works once and expires in 7 days. The account can only redeem vouchers at its branch.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto] gap-3 mt-4 items-end">
+            <label class="block">
+              <span class="block text-[11px] font-semibold uppercase tracking-wider text-gray-600 mb-1">Branch</span>
+              <select id="saBranch" class="w-full px-3 py-2 text-[14px] bg-white border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed"></select>
+            </label>
+            <label class="block">
+              <span class="block text-[11px] font-semibold uppercase tracking-wider text-gray-600 mb-1">Store email</span>
+              <input id="saEmail" type="email" maxlength="254" autocomplete="off" placeholder="banawe.store@example.com" class="w-full px-3 py-2 text-[14px] border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+            </label>
+            <button id="saSendBtn" type="submit" class="px-5 py-2.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[13px] font-semibold transition-colors shadow-sm disabled:opacity-50">Send invite</button>
+          </div>
+          <p id="saEmailNote" class="hidden text-[12px] text-gray-500 mt-3">Invite emails aren't set up yet (EMAILJS_STORE_INVITE_TEMPLATE_ID in js/firebase-config.js), so the link is copied for you to send yourself.</p>
+        </form>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 class="text-[16px] font-bold text-gray-900">Kiosk accounts</h2>
+          <span id="storeAccountsSummary" class="text-xs font-medium text-gray-600 bg-white border border-gray-200 px-3 py-1 rounded-full"></span>
+        </div>
+        <div id="storeAccountsList" class="space-y-[10px]"></div>
+      </section>
+
       <section id="surveyQuestionsView" class="hidden">
         <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-7 items-start">
           <!-- Left: survey configuration -->
@@ -466,6 +523,13 @@
 
           <!-- Right: phone simulator — the real customer survey in preview mode (display only, nothing is saved) -->
           <aside class="xl:sticky xl:top-[78px] w-full max-w-[340px] mx-auto xl:mx-0">
+            <!-- Which survey this page edits and previews (js/surveyQuestions.js) -->
+            <div class="flex justify-center mb-4">
+              <div class="inline-flex p-1 rounded-full bg-white border border-tvRed/60 shadow-sm" role="group" aria-label="Survey">
+                <button type="button" data-survey-tab="dinein" class="px-5 py-2 rounded-full text-[12.5px] font-bold uppercase tracking-[0.06em]">Dine-in</button>
+                <button type="button" data-survey-tab="delivery" class="px-5 py-2 rounded-full text-[12.5px] font-bold uppercase tracking-[0.06em]">Delivery</button>
+              </div>
+            </div>
             <div class="flex items-start justify-between gap-3 mb-3">
               <div>
                 <h2 class="text-[15px] font-bold text-gray-900">Customer preview</h2>
@@ -702,7 +766,12 @@
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
         </button>
       </div>
-      <p id="qrBranchLabel" class="text-[13px] font-semibold text-tvRed mb-4"></p>
+      <p id="qrBranchLabel" class="text-[13px] font-semibold text-tvRed mb-3"></p>
+      <div class="inline-flex p-1 rounded-full bg-gray-100 mb-4" role="group" aria-label="Survey type">
+        <button type="button" data-qr-type="dinein" class="px-4 py-1.5 rounded-full text-[12px] font-bold uppercase tracking-[0.05em]">Dine-in</button>
+        <button type="button" data-qr-type="delivery" class="px-4 py-1.5 rounded-full text-[12px] font-bold uppercase tracking-[0.05em]">Delivery</button>
+      </div>
+      <p id="qrTypeHint" class="text-[12px] text-gray-500 -mt-2 mb-4"></p>
       <div id="qrLocalWarning" class="hidden mb-4 p-3 rounded-[6px] bg-gray-50 border-l-2 border-tvRed text-[12px] text-gray-700">
         You're running the dashboard on this computer, so phones can't open this link. Generate QR codes from the dashboard on your hosted website.
       </div>
@@ -806,6 +875,12 @@
         subtitle: "Customize the questions shown in the customer survey",
         action: "+ Add Question", onAction: () => openSurveyQuestionModal(),
         filters: false, search: false
+      },
+      accounts: {
+        title: "Account Creation",
+        subtitle: "Invite each branch to the voucher redeem kiosk (one account per branch)",
+        action: null,
+        filters: false, search: false
       }
     };
 
@@ -897,6 +972,7 @@
       if (currentView === "branches") renderBranchesAdmin();
       if (currentView === "vouchers") renderVouchers();
       if (currentView === "employees") renderEmployees();
+      if (currentView === "accounts") renderStoreAccounts();
       if (currentView === "surveyQuestions") {
         loadPhonePreview();
         requestAnimationFrame(fitPhone); // the column has a real width only once the view is visible
@@ -953,6 +1029,15 @@
     }
 
     document.getElementById("branchSelect").addEventListener("change", e => selectBranch(e.target.value));
+
+    // Dine-in / Delivery filter (js/dashboard.js scopedSubmissions + js/reviewsInsights.js reviewsInScope)
+    document.getElementById("surveyTypeSelect").addEventListener("change", e => {
+      selectedSurveyFilter = e.target.value;
+      updateKPIs();
+      renderDashboardBranches();
+      renderReviewsFeed();
+      renderReviewsTab();
+    });
 
     // ---------- Dashboard branch cards ----------
     function renderDashboardBranches() {
@@ -1161,16 +1246,23 @@
 
     // ---------- Branch QR codes ----------
     let qrTargetId = null;
+    let qrType = "dinein"; // "dinein" | "delivery" (delivery QR goes on bags / receipts)
 
-    function surveyUrlFor(branchId) {
+    function surveyUrlFor(branchId, type = "dinein") {
       const url = new URL("review.html", location.href);
       url.search = "";
       url.hash = "";
       url.searchParams.set("branch", branchId);
+      if (type === "delivery") url.searchParams.set("type", "delivery");
       return url.toString();
     }
 
-    function openQrModal(id) {
+    document.querySelectorAll("[data-qr-type]").forEach(btn => btn.addEventListener("click", () => {
+      qrType = btn.dataset.qrType;
+      if (qrTargetId) openQrModal(qrTargetId, qrType);
+    }));
+
+    function openQrModal(id, type = "dinein") {
       const b = branches.find(x => x.id === id);
       if (!b) return;
       if (typeof QRCode === "undefined") {
@@ -1178,7 +1270,16 @@
         return;
       }
       qrTargetId = id;
-      const url = surveyUrlFor(id);
+      qrType = type === "delivery" ? "delivery" : "dinein";
+      document.querySelectorAll("[data-qr-type]").forEach(b => {
+        const on = b.dataset.qrType === qrType;
+        b.className = "px-4 py-1.5 rounded-full text-[12px] font-bold uppercase tracking-[0.05em] transition-colors " +
+          (on ? "bg-tvRed text-white shadow-sm" : "text-gray-600 hover:text-gray-900");
+      });
+      document.getElementById("qrTypeHint").textContent = qrType === "delivery"
+        ? "For delivery bags, stickers and receipts: opens the delivery survey."
+        : "For tables and the counter: opens the dine-in survey.";
+      const url = surveyUrlFor(id, qrType);
       document.getElementById("qrBranchLabel").textContent = b.name;
       document.getElementById("qrUrlInput").value = url;
       const isLocal = location.protocol === "file:" || ["localhost", "127.0.0.1", ""].includes(location.hostname);
@@ -1213,7 +1314,7 @@
       if (!data) return;
       const a = document.createElement("a");
       a.href = data;
-      a.download = `jiangnan-qr-${qrTargetId}.png`;
+      a.download = `jiangnan-qr-${qrTargetId}${qrType === "delivery" ? "-delivery" : ""}.png`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1239,7 +1340,7 @@
         .cta{font-size:20px;font-weight:700;color:#c8102e;margin-top:20px}<\/style><\/head>
         <body><img class="logo" src="${new URL("images/jiangnan-logo.png", location.href).href}" alt="Jiang Nan Hotpot"><div style="font-weight:700;letter-spacing:.02em;margin-top:6px">Jiang Nan Hotpot<\/div>
         <h1>${escapeHtml(b.name)}<\/h1><p>${escapeHtml(b.address || "")}<\/p>
-        <img class="qr" src="${data}" alt="Survey QR code"><div class="cta">Scan to rate your visit<\/div><\/body><\/html>`);
+        <img class="qr" src="${data}" alt="Survey QR code"><div class="cta">${qrType === "delivery" ? "Scan to rate your delivery" : "Scan to rate your visit"}<\/div><\/body><\/html>`);
       w.document.close();
       w.onload = () => { w.focus(); w.print(); };
       setTimeout(() => { try { w.focus(); w.print(); } catch {} }, 600);
@@ -1271,11 +1372,14 @@
     function loadPhonePreview(force = false) {
       if (phoneFrame.dataset.loaded && !force) return;
       document.getElementById("phonePreviewLoading").classList.remove("hidden");
-      phoneFrame.src = `review.html?preview=1&t=${Date.now()}`;
+      const type = typeof activeSurvey !== "undefined" && activeSurvey === "delivery" ? "&type=delivery" : "";
+      phoneFrame.src = `review.html?preview=1${type}&t=${Date.now()}`;
       phoneFrame.dataset.loaded = "1";
     }
     phoneFrame.addEventListener("load", () => document.getElementById("phonePreviewLoading").classList.add("hidden"));
     document.getElementById("previewRestartBtn").addEventListener("click", () => loadPhonePreview(true));
+    // DINE-IN | DELIVERY toggle (js/surveyQuestions.js): show the other survey in the phone
+    window.onActiveSurveyChanged = () => { if (phoneFrame.dataset.loaded) loadPhonePreview(true); };
 
     // "Preview" on a question card: jump the phone to that question
     // (stepKey = "q:<id>" for your own questions, or a built-in step like "rate:overall")
@@ -1300,6 +1404,7 @@
       renderBranchesAdmin();
       renderEmployees();
       renderReviewsFeed();
+      renderStoreAccounts(); // branch picker + names
     };
 
     // ---------- Reviews feed ----------
@@ -1393,8 +1498,9 @@
                   <span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold ${badgeClass[rev.sentiment]}">${rev.sentiment}</span>
                   ${rev.resolved ? '<span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Resolved</span>' : ""}
                   ${rev.flagged ? '<span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold border border-tvRed text-tvRed">Flagged</span>' : ""}
+                  ${surveyTypeOf(rev.raw) === "delivery" ? '<span class="px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">🛵 Delivery</span>' : ""}
                 </div>
-                <p class="text-[12px] text-gray-500 mt-0.5">${escapeHtml(rev.date)} · ${escapeHtml(rev.branchName)} · Staff: ${escapeHtml(rev.staffName)}</p>
+                <p class="text-[12px] text-gray-500 mt-0.5">${escapeHtml(rev.date)} · ${escapeHtml(rev.branchName)}${surveyTypeOf(rev.raw) === "delivery" ? "" : ` · Staff: ${escapeHtml(rev.staffName)}`}</p>
               </div>
             </div>
             <div class="text-right shrink-0">
@@ -1742,6 +1848,7 @@
         document.getElementById("loginOverlay").classList.add("hidden");
         subscribeToSurveySubmissions();
         subscribeToVouchers();
+        subscribeToStoreInvites();
       } else {
         showNotAdmin(user, status);
       }
@@ -1761,6 +1868,7 @@
         showLoginForm();
         unsubscribeFromSurveySubmissions();
         unsubscribeFromVouchers();
+        unsubscribeFromStoreInvites();
         document.getElementById("loginPassword").value = "";
         updateKPIs();
         renderDashboardBranches();

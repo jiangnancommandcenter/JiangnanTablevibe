@@ -40,8 +40,8 @@ function inPeriod(s) {
 
 // Branch + period scope (search is applied only where it makes sense: Suggestions & All reviews)
 function reviewsInScope({ ignoreBranch = false } = {}) {
-    return surveySubmissions.filter(s =>
-        inPeriod(s) && (ignoreBranch || selectedBranchId === "All" || s.branchId === selectedBranchId));
+    return surveySubmissions.filter(s => inPeriod(s) && matchesSurveyFilter(s) // Dine-in / Delivery filter
+        && (ignoreBranch || selectedBranchId === "All" || s.branchId === selectedBranchId));
 }
 
 function validStar(v) {
@@ -63,9 +63,22 @@ function periodLabel() {
     return selectedPeriodDays ? `last ${selectedPeriodDays} days` : "all time";
 }
 
-// Rating category ids → label/icon (current config + any old ids still in the data)
-function categoryMeta(id) {
-    const c = ratingConfig.categories.find(x => x.id === id);
+// Rating categories for the current Type filter: dine-in, delivery, or both (dine-in first,
+// then the delivery-only ones such as "packaging")
+function categoriesInView() {
+    if (selectedSurveyFilter === "delivery") return deliveryRatingConfig.categories;
+    if (selectedSurveyFilter === "dinein") return ratingConfig.categories;
+    const ids = new Set(ratingConfig.categories.map(c => c.id));
+    return ratingConfig.categories.concat(deliveryRatingConfig.categories.filter(c => !ids.has(c.id)));
+}
+
+// Rating category ids → label/icon (current config + any old ids still in the data).
+// survey: look in that survey's categories first ("food" is named differently in each)
+function categoryMeta(id, survey) {
+    const first = survey === "delivery" ? deliveryRatingConfig : ratingConfig;
+    const second = survey === "delivery" ? ratingConfig : deliveryRatingConfig;
+    const c = (survey ? first.categories.find(x => x.id === id) : categoriesInView().find(x => x.id === id))
+        || second.categories.find(x => x.id === id) || first.categories.find(x => x.id === id);
     return c ? { label: c.label, icon: c.icon, removed: false } : { label: id, icon: "•", removed: true };
 }
 
@@ -223,7 +236,7 @@ function renderOverviewTab() {
         })).join("")}`;
 
     // Category averages: current categories first, then old ids still present in the data
-    const ids = ratingConfig.categories.map(c => c.id);
+    const ids = categoriesInView().map(c => c.id);
     subs.forEach(s => Object.keys(s.ratings || {}).forEach(k => { if (k !== "staffService" && !ids.includes(k)) ids.push(k); }));
     const catRows = ids.map(id => {
         const vals = subs.map(s => validStar(s.ratings && s.ratings[id])).filter(v => v !== null);
@@ -264,7 +277,7 @@ function renderBranchesTab() {
         const open = expandedRows.has(key);
         const detail = open ? `
             <div class="pl-4 sm:pl-[10.75rem] pb-3">
-                ${ratingConfig.categories.map(c => {
+                ${categoriesInView().map(c => {
                     const vals = x.subs.map(s => validStar(s.ratings && s.ratings[c.id])).filter(v => v !== null);
                     const a = average(vals);
                     return a === null ? "" : hBar({ label: c.label, icon: c.icon, value: a, max: 5, valueText: `${a.toFixed(1)} ★`, sub: `(${vals.length})` });
@@ -456,11 +469,11 @@ function fullResponseHtml(s) {
     const stars = n => (validStar(n) ? `<span class="text-tvRed tracking-[1px]">${"★".repeat(n)}</span><span class="text-gray-300 tracking-[1px]">${"★".repeat(5 - n)}</span> <span class="text-gray-500">${n}/5</span>` : '<span class="text-gray-400">—</span>');
 
     const parts = [];
-    const ids = ratingConfig.categories.map(c => c.id);
+    const ids = ratingConfigFor(surveyTypeOf(s)).categories.map(c => c.id);
     Object.keys(s.ratings || {}).forEach(k => { if (k !== "staffService" && !ids.includes(k)) ids.push(k); });
     ids.forEach(id => {
         if (!s.ratings || s.ratings[id] === undefined) return;
-        const m = categoryMeta(id);
+        const m = categoryMeta(id, surveyTypeOf(s));
         parts.push(row(`${escapeHtml(m.icon)} ${escapeHtml(m.label)}${m.removed ? " (removed)" : ""}`, stars(s.ratings[id])));
     });
     if (s.atmosphereOpen && (s.atmosphereOpen.rating || (s.atmosphereOpen.comment || "").trim())) {

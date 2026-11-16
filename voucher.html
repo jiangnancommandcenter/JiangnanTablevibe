@@ -21,6 +21,9 @@
     .code { font-family: "Courier New", monospace; font-size: 34px; font-weight: bold; letter-spacing: .18em; color: #111; word-break: break-all; }
     .hint { font-size: 14px; color: var(--muted); margin-top: 14px; }
     .invalid { display: none; }
+    .conditions { display: none; margin-top: 24px; padding-top: 18px; border-top: 1px solid #e5e5e5; }
+    .conditions-title { font-weight: bold; }
+    .conditions ul { list-style: none; margin: 8px 0 0; padding: 0; font-size: 14px; line-height: 1.6; color: #333; }
   </style>
 </head>
 <body>
@@ -39,6 +42,11 @@
           <div class="code" id="code"></div>
         </div>
         <p class="hint">Show this screen to our staff before payment.</p>
+
+        <div class="conditions" id="conditions">
+          <p class="conditions-title">The following conditions apply:</p>
+          <ul id="conditionsList"></ul>
+        </div>
       </div>
 
       <div class="invalid" id="invalid">
@@ -73,6 +81,19 @@
       if (discount > 0 && discount <= 100) document.getElementById("discount").textContent = discount + "%";
       var appliesTo = (q.get("a") || "").trim().slice(0, 60);
       if (appliesTo) document.getElementById("appliesTo").textContent = appliesTo;
+
+      // Conditions as they were when the voucher was sent (repeated ?k= params); older links have none
+      var conditions = q.getAll("k").map(function (s) { return s.trim().slice(0, 200); })
+        .filter(function (s) { return s; }).slice(0, 11);
+      if (conditions.length) {
+        var list = document.getElementById("conditionsList");
+        conditions.forEach(function (line) {
+          var li = document.createElement("li");
+          li.textContent = "- " + line;
+          list.appendChild(li);
+        });
+        document.getElementById("conditions").style.display = "block";
+      }
     })();
   </script>
 </body>

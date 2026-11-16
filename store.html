@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jiang Nan Hotpot — Store Redeem</title>
+  <link rel="icon" type="image/png" href="images/jiangnan-logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'] },
+          colors: {
+            tvDark: '#141414',
+            tvRed: '#c8102e',
+            tvRedHover: '#a70d26',
+            tvBg: '#f3f4f6'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { overflow-x: hidden; overflow-x: clip; }
+    /* Tablet layout: bigger touch targets, no text selection / double-tap zoom on the keypad */
+    body[data-layout="tablet"] .kiosk-key { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+    body:not([data-layout="tablet"]) .tablet-only { display: none !important; }
+    body[data-layout="tablet"] .pc-only { display: none !important; }
+  </style>
+  <script src="js/firebase-config.js?v=20261116g"></script>
+  <script src="js/voucherConfig.js?v=20261116a"></script>
+</head>
+<body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen">
+
+  <!-- ===== Sign in / not a store account / loading ===== -->
+  <div id="authScreen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-sm">
+      <div class="flex items-center justify-center gap-3 mb-6">
+        <img src="images/jiangnan-logo.png" alt="Jiang Nan Hotpot" class="h-[52px] w-[52px] object-contain">
+        <div>
+          <div class="font-bold text-[18px] text-gray-900 leading-tight">Jiang Nan Hotpot</div>
+          <div class="text-[12px] font-semibold uppercase tracking-wider text-tvRed">Voucher redeem</div>
+        </div>
+      </div>
+
+      <div id="authLoading" class="flex flex-col items-center gap-3 py-8 text-[13px] text-gray-500">
+        <span class="w-6 h-6 rounded-full border-2 border-gray-300 border-t-tvRed animate-spin" aria-hidden="true"></span>
+        Checking your sign-in…
+      </div>
+
+      <!-- Invite link (store.html?invite=...): create the kiosk account. Filled by js/storeKiosk.js -->
+      <div id="invitePanel" class="hidden bg-white border border-gray-200 rounded-[12px] p-6 shadow-sm">
+        <div id="inviteMessage"></div>
+        <form id="inviteForm" action="javascript:void(0)" onsubmit="return false" class="hidden space-y-4">
+          <div>
+            <h1 class="text-lg font-bold text-gray-900">Set your password</h1>
+            <p class="text-[13px] text-gray-500 mt-1">Kiosk login for <strong id="inviteBranch" class="text-gray-900"></strong>. Choose a password and you're in.</p>
+          </div>
+          <div>
+            <label for="inviteEmail" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Your login email</label>
+            <input id="inviteEmail" type="email" readonly autocomplete="username" class="w-full px-3.5 py-3 text-[15px] text-gray-700 bg-gray-50 border border-gray-200 rounded-[8px]" />
+          </div>
+          <div>
+            <label id="invitePasswordLabel" for="invitePassword" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Password</label>
+            <input id="invitePassword" type="password" minlength="8" required autocomplete="new-password" class="w-full px-3.5 py-3 text-[15px] border border-gray-300 rounded-[8px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+            <p id="invitePasswordHint" class="text-[11.5px] text-gray-500 mt-1">At least 8 characters.</p>
+          </div>
+          <div id="inviteConfirmBox">
+            <label for="inviteConfirm" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Confirm password</label>
+            <input id="inviteConfirm" type="password" autocomplete="new-password" class="w-full px-3.5 py-3 text-[15px] border border-gray-300 rounded-[8px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+          </div>
+          <p id="inviteError" class="hidden text-[12.5px] font-medium text-tvRed"></p>
+          <button id="inviteSubmitBtn" type="submit" class="w-full bg-tvRed hover:bg-tvRedHover text-white font-semibold text-[15px] px-4 py-3 rounded-[8px] transition-colors shadow-sm disabled:opacity-60">Save password &amp; open kiosk</button>
+        </form>
+      </div>
+
+      <form id="loginForm" action="javascript:void(0)" onsubmit="return false" class="hidden bg-white border border-gray-200 rounded-[12px] p-6 shadow-sm space-y-4">
+        <div>
+          <h1 class="text-lg font-bold text-gray-900">Store sign in</h1>
+          <p class="text-[13px] text-gray-500 mt-1">Use your branch's store account.</p>
+        </div>
+        <div>
+          <label for="loginEmail" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Email</label>
+          <input id="loginEmail" type="email" required autocomplete="username" class="w-full px-3.5 py-3 text-[15px] border border-gray-300 rounded-[8px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div>
+          <label for="loginPassword" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Password</label>
+          <input id="loginPassword" type="password" required autocomplete="current-password" class="w-full px-3.5 py-3 text-[15px] border border-gray-300 rounded-[8px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <p id="loginError" class="hidden text-[12.5px] font-medium text-tvRed"></p>
+        <button id="loginSubmitBtn" type="submit" class="w-full bg-tvRed hover:bg-tvRedHover text-white font-semibold text-[15px] px-4 py-3 rounded-[8px] transition-colors shadow-sm disabled:opacity-60">Sign in</button>
+      </form>
+
+      <!-- Signed in, but this account has no stores/{uid} document -->
+      <div id="notStorePanel" class="hidden bg-white border border-gray-200 rounded-[12px] p-6 shadow-sm space-y-4">
+        <div>
+          <h1 class="text-lg font-bold text-gray-900">Not a store account yet</h1>
+          <p class="text-[13px] text-gray-500 mt-1">Signed in as <strong id="notStoreEmail" class="text-gray-900"></strong>.</p>
+        </div>
+        <p id="notStoreMessage" class="text-[13px] text-gray-700"></p>
+        <div>
+          <label for="notStoreUid" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Document ID (this account's UID)</label>
+          <div class="flex gap-2">
+            <input id="notStoreUid" type="text" readonly class="flex-1 min-w-0 px-3 py-2 text-[12px] font-mono text-gray-800 border border-gray-300 rounded-[6px] bg-gray-50" />
+            <button id="copyUidBtn" type="button" class="px-3 py-2 text-[12px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] shrink-0">Copy</button>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-1">
+          <button id="notStoreSignOutBtn" type="button" class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px]">Sign out</button>
+          <button id="recheckStoreBtn" type="button" class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] disabled:opacity-60">Check again</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Layout choice (first time on this device, or "Change layout") ===== -->
+  <div id="layoutScreen" class="hidden min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-3xl text-center">
+      <img src="images/jiangnan-logo.png" alt="Jiang Nan Hotpot" class="h-[56px] w-[56px] object-contain mx-auto mb-3">
+      <h1 class="text-[24px] font-bold text-gray-900">How is this device used?</h1>
+      <p class="text-[14px] text-gray-500 mt-1">Pick the layout for this screen. You can change it anytime.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
+        <button type="button" data-layout-choice="pc" class="group bg-white border-2 border-gray-200 hover:border-tvRed rounded-[16px] p-8 text-left transition-colors focus:outline-none focus-visible:border-tvRed">
+          <svg class="w-14 h-14 text-gray-400 group-hover:text-tvRed transition-colors" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>
+          <div class="text-[20px] font-bold text-gray-900 mt-4">Windows / PC</div>
+          <p class="text-[13.5px] text-gray-500 mt-1">Keyboard and mouse. Type the code, press Enter. Side-by-side view.</p>
+        </button>
+        <button type="button" data-layout-choice="tablet" class="group bg-white border-2 border-gray-200 hover:border-tvRed rounded-[16px] p-8 text-left transition-colors focus:outline-none focus-visible:border-tvRed">
+          <svg class="w-14 h-14 text-gray-400 group-hover:text-tvRed transition-colors" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M11 18.5h2"/></svg>
+          <div class="text-[20px] font-bold text-gray-900 mt-4">Tablet</div>
+          <p class="text-[13.5px] text-gray-500 mt-1">Touch screen. Big on-screen keypad for the voucher code.</p>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Kiosk ===== -->
+  <div id="kioskScreen" class="hidden min-h-screen flex flex-col">
+    <header class="bg-white border-b border-gray-200 px-4 sm:px-6 h-[64px] flex items-center justify-between gap-3 sticky top-0 z-20">
+      <div class="flex items-center gap-3 min-w-0">
+        <img src="images/jiangnan-logo.png" alt="" class="h-[40px] w-[40px] object-contain shrink-0">
+        <div class="min-w-0">
+          <div id="branchLabel" class="font-bold text-[16px] text-gray-900 truncate">—</div>
+          <div class="text-[11.5px] font-semibold uppercase tracking-wider text-tvRed">Voucher redeem</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span id="clockLabel" class="hidden sm:inline text-[14px] font-semibold text-gray-600 tabular-nums mr-2"></span>
+        <button id="changeLayoutBtn" type="button" class="px-3 py-2 text-[12.5px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[8px]">Change layout</button>
+        <button id="signOutBtn" type="button" class="px-3 py-2 text-[12.5px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[8px]">Sign out</button>
+      </div>
+    </header>
+
+    <main class="flex-1 w-full max-w-[1200px] mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-5 items-start">
+      <!-- Find + result -->
+      <section class="bg-white border border-gray-200 rounded-[16px] p-5 sm:p-7 shadow-sm">
+        <div class="flex gap-1 p-1 bg-gray-100 rounded-[10px] w-fit" role="tablist">
+          <button type="button" data-mode="code" class="mode-tab px-4 py-2 rounded-[8px] text-[14px] font-semibold">Voucher code</button>
+          <button type="button" data-mode="email" class="mode-tab px-4 py-2 rounded-[8px] text-[14px] font-semibold">Customer email</button>
+        </div>
+
+        <form id="findForm" action="javascript:void(0)" class="mt-5">
+          <div id="codeBox">
+            <label for="codeInput" class="block text-[12px] font-semibold uppercase tracking-wider text-gray-500 mb-2">8-character code</label>
+            <input id="codeInput" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7M2QX9P"
+              class="w-full px-4 py-4 text-center font-mono font-bold text-[34px] sm:text-[40px] tracking-[0.3em] uppercase border-2 border-gray-300 rounded-[12px] focus:outline-none focus:border-tvRed placeholder:text-gray-200" />
+          </div>
+          <div id="emailBox" class="hidden">
+            <label for="emailInput" class="block text-[12px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Email the voucher was sent to</label>
+            <input id="emailInput" type="email" maxlength="254" autocomplete="off" spellcheck="false" placeholder="customer@email.com"
+              class="w-full px-4 py-4 text-[20px] border-2 border-gray-300 rounded-[12px] focus:outline-none focus:border-tvRed" />
+          </div>
+          <button id="findBtn" type="submit" class="pc-only mt-3 w-full py-3.5 rounded-[12px] bg-tvDark hover:bg-black text-white text-[16px] font-bold disabled:opacity-60">Find voucher <span class="font-normal text-gray-400 text-[13px]">(Enter)</span></button>
+          <!-- Tablet: shown in email mode only (code mode has Find on the keypad) -->
+          <button id="findBtnTablet" type="submit" class="tablet-only mt-3 w-full py-4 rounded-[12px] bg-tvDark text-white text-[18px] font-bold disabled:opacity-60">Find voucher</button>
+        </form>
+
+        <!-- On-screen keypad (tablet layout, code mode, no result shown) -->
+        <div id="keypad" class="tablet-only mt-4 space-y-2"></div>
+
+        <!-- Voucher result / confirm / success -->
+        <div id="resultArea" class="mt-5" aria-live="polite"></div>
+      </section>
+
+      <!-- Today's redemptions at this branch -->
+      <aside class="bg-white border border-gray-200 rounded-[16px] p-5 shadow-sm">
+        <div class="flex items-baseline justify-between gap-2">
+          <h2 class="text-[16px] font-bold text-gray-900">Today's redemptions</h2>
+          <span id="todayCount" class="text-[28px] font-extrabold text-tvRed tabular-nums">0</span>
+        </div>
+        <p id="todayDate" class="text-[12px] text-gray-500"></p>
+        <ul id="todayList" class="mt-4 divide-y divide-gray-100"></ul>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-[90vw] px-4 py-3 rounded-[10px] bg-tvDark text-white text-[14px] font-medium shadow-lg"></div>
+
+  <script src="js/storeKiosk.js?v=20261116f"></script>
+</body>
+</html>

@@ -24,6 +24,37 @@ function isVisible(q) {
     return q.visible !== false;
 }
 
+// Which survey the page is editing: "dinein" (default) or "delivery" (the DINE-IN | DELIVERY toggle).
+// Questions carry survey: "delivery"; older questions have no field and belong to dine-in.
+const SURVEY_TAB_KEY = "dpSurveyTab";
+let activeSurvey = (() => {
+    try { return localStorage.getItem(SURVEY_TAB_KEY) === "delivery" ? "delivery" : "dinein"; } catch { return "dinein"; }
+})();
+const activeRatingCfg = () => ratingConfigFor(activeSurvey);
+const activeQuestions = () => surveyQuestions.filter(q => surveyTypeOf(q) === activeSurvey);
+
+function setActiveSurvey(type) {
+    const next = type === "delivery" ? "delivery" : "dinein";
+    if (next === activeSurvey) return;
+    activeSurvey = next;
+    try { localStorage.setItem(SURVEY_TAB_KEY, activeSurvey); } catch {}
+    editingRatingTitle = false;
+    updateSurveyToggle();
+    renderSurveyQuestions();
+    if (typeof window.onActiveSurveyChanged === "function") window.onActiveSurveyChanged(activeSurvey);
+}
+
+function updateSurveyToggle() {
+    document.querySelectorAll("[data-survey-tab]").forEach(b => {
+        const on = b.dataset.surveyTab === activeSurvey;
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.className = "px-5 py-2 rounded-full text-[12.5px] font-bold uppercase tracking-[0.06em] transition-colors " +
+            (on ? "bg-tvRed text-white shadow-sm" : "text-tvRed hover:bg-red-50");
+    });
+}
+
+const builtInsFor = survey => (survey === "delivery" ? DELIVERY_BUILT_IN_QUESTIONS : BUILT_IN_QUESTIONS);
+
 // Questions built into the customer survey (fixed in code, always asked, in this order).
 // Listed read-only so admins see the whole survey. `key` = the step name the phone preview jumps to.
 const BUILT_IN_QUESTIONS = [
@@ -34,6 +65,55 @@ const BUILT_IN_QUESTIONS = [
     { key: "staff", question: "Who assisted your table?", kind: "Staff picker", note: "Lists the employees of the chosen branch." },
     { key: "staff-rate", question: "How would you rate <staff member>'s service?", kind: "5-star rating · optional", note: "Only asked when a staff member was picked." }
 ];
+
+// Delivery survey (review.html?type=delivery): no atmosphere or staff questions
+const DELIVERY_BUILT_IN_QUESTIONS = [
+    { key: "branch", question: "Which branch did your order come from?", kind: "Branch picker", note: "Skipped when the customer scans the branch's delivery QR code." },
+    { key: "ratings", group: true },
+    { key: "comment", question: "Share your detailed feedback", kind: "Review + name · optional" }
+];
+
+// Recommended delivery questions, added with one click and then fully editable
+const DELIVERY_SEED_DISMISSED = "dpDeliverySeedDismissed";
+const DELIVERY_SEED_QUESTIONS = [
+    { question: "Where did you order from?", type: "multiple_choice",
+      choices: ["GrabFood", "foodpanda", "Direct (call / Messenger / website)", "Other"] },
+    { question: "Was your order complete and correct?", type: "multiple_choice",
+      choices: ["Yes, complete and correct", "Some items were missing", "I received a wrong item", "Food was spilled or damaged"] },
+    { question: "Would you order from us again?", type: "multiple_choice",
+      choices: ["Definitely", "Maybe", "Probably not"] },
+    { question: "What did you order?", type: "open_ended", choices: [] }
+];
+
+function deliverySeedDismissed() {
+    try { return localStorage.getItem(DELIVERY_SEED_DISMISSED) === "1"; } catch { return false; }
+}
+
+async function addDeliveryQuestions(btn) {
+    if (btn) btn.disabled = true;
+    try {
+        const maxOrder = activeQuestions().reduce((m, q) => Math.max(m, Number(q.order) || 0), 0);
+        const batch = db.batch();
+        DELIVERY_SEED_QUESTIONS.forEach((q, i) => {
+            batch.set(db.collection("surveyQuestions").doc(), {
+                question: q.question,
+                type: q.type,
+                choices: q.choices,
+                visible: true,
+                order: maxOrder + i + 1,
+                survey: "delivery",
+                seedKey: "delivery",
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+        await batch.commit();
+        showToast("Recommended delivery questions added. Edit them like any other question.");
+    } catch (error) {
+        console.error("Error adding delivery questions:", error);
+        showToast("Failed to add the questions. Please try again.");
+        if (btn) btn.disabled = false;
+    }
+}
 
 // The old hard-coded "manager visit" question, offered once as a normal (editable) question
 const MANAGER_SEED_KEY = "managerVisit";
@@ -79,7 +159,7 @@ function builtInCardHtml(b, number) {
 let editingRatingTitle = false;
 
 function ratingGroupCardHtml(number) {
-    const cats = ratingConfig.categories;
+    const cats = activeRatingCfg().categories;
     const iconBtn = (action, id, label, svgPath, extra = "") => `
         <button type="button" data-action="${action}" data-id="${escapeHtml(id)}" ${extra} aria-label="${label}" title="${label}"
                 class="p-1 rounded text-gray-400 hover:text-gray-900 hover:bg-white disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
@@ -88,13 +168,13 @@ function ratingGroupCardHtml(number) {
 
     const titleBlock = editingRatingTitle ? `
         <div class="flex items-center gap-2 flex-wrap">
-            <input id="ratingTitleInput" type="text" maxlength="120" value="${escapeHtml(ratingConfig.title)}"
+            <input id="ratingTitleInput" type="text" maxlength="120" value="${escapeHtml(activeRatingCfg().title)}"
                    class="flex-1 min-w-[180px] px-3 py-1.5 text-[14px] font-bold border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed">
             <button type="button" data-action="rating-title-save" class="px-3 py-1.5 text-[12px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px]">Save</button>
             <button type="button" data-action="rating-title-cancel" class="px-3 py-1.5 text-[12px] font-semibold text-gray-600 hover:text-gray-900">Cancel</button>
         </div>` : `
         <div class="flex items-center gap-2 flex-wrap">
-            <h3 class="text-[14px] font-bold text-gray-900 break-words">${escapeHtml(ratingConfig.title)}</h3>
+            <h3 class="text-[14px] font-bold text-gray-900 break-words">${escapeHtml(activeRatingCfg().title)}</h3>
             <button type="button" data-action="rating-title-edit" aria-label="Edit title" title="Edit title" class="p-1 rounded text-gray-400 hover:text-gray-900">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4l10.5-10.5a2.5 2.5 0 00-3.536-3.536L4 16.5V20z"/></svg>
             </button>
@@ -142,7 +222,7 @@ function ratingGroupCardHtml(number) {
 
 async function writeRatingCategories(categories, okMessage) {
     try {
-        await saveRatingConfig({ title: ratingConfig.title, categories });
+        await saveRatingConfig({ title: activeRatingCfg().title, categories }, activeSurvey);
         if (okMessage) showToast(okMessage);
         return true;
     } catch (error) {
@@ -153,7 +233,7 @@ async function writeRatingCategories(categories, okMessage) {
 }
 
 function openRatingCategoryModal(editId = null) {
-    const cat = editId ? ratingConfig.categories.find(c => c.id === editId) : null;
+    const cat = editId ? activeRatingCfg().categories.find(c => c.id === editId) : null;
     document.getElementById("rcEditId").value = cat ? cat.id : "";
     document.getElementById("rcModalTitle").textContent = cat ? "Edit Rating Category" : "Add Rating Category";
     document.getElementById("rcName").value = cat ? cat.label : "";
@@ -181,7 +261,7 @@ async function saveRatingCategoryFromModal(e) {
     const name = document.getElementById("rcName").value.trim();
     const icon = document.getElementById("rcIcon").value.trim() || "⭐";
     if (!name) return showToast("Please enter a category name.");
-    const cats = ratingConfig.categories.map(c => ({ ...c }));
+    const cats = activeRatingCfg().categories.map(c => ({ ...c }));
     if (editId) {
         const c = cats.find(x => x.id === editId);
         if (!c) return;
@@ -218,14 +298,14 @@ function handleRatingGroupAction(action, btn) {
         const title = document.getElementById("ratingTitleInput").value.trim();
         if (!title) return showToast("The title can't be empty.");
         btn.disabled = true;
-        saveRatingConfig({ title, categories: ratingConfig.categories })
+        saveRatingConfig({ title, categories: activeRatingCfg().categories }, activeSurvey)
             .then(() => { editingRatingTitle = false; showToast("Title updated."); renderSurveyQuestions(); })
             .catch(err => { console.error(err); btn.disabled = false; showToast("Couldn't save. Are the latest Firestore rules published?"); });
     }
     if (action === "rating-cat-add") openRatingCategoryModal();
     if (action === "rating-cat-edit") openRatingCategoryModal(id);
     if (action === "rating-cat-move") {
-        const cats = ratingConfig.categories.map(c => ({ ...c }));
+        const cats = activeRatingCfg().categories.map(c => ({ ...c }));
         const i = cats.findIndex(c => c.id === id);
         const j = i + Number(btn.dataset.dir);
         if (i < 0 || j < 0 || j >= cats.length) return;
@@ -234,10 +314,10 @@ function handleRatingGroupAction(action, btn) {
         writeRatingCategories(cats);
     }
     if (action === "rating-cat-delete") {
-        const c = ratingConfig.categories.find(x => x.id === id);
+        const c = activeRatingCfg().categories.find(x => x.id === id);
         if (!c || c.id === RATING_REQUIRED_ID) return;
         if (!confirm(`Delete "${c.label}"?\nCustomers won't be asked this any more. Past ratings are kept.`)) return;
-        writeRatingCategories(ratingConfig.categories.filter(x => x.id !== id), `"${c.label}" deleted.`);
+        writeRatingCategories(activeRatingCfg().categories.filter(x => x.id !== id), `"${c.label}" deleted.`);
     }
 }
 
@@ -249,12 +329,18 @@ function renderSurveyQuestions() {
     if (!listEl) return;
 
     emptyEl.classList.add("hidden"); // the "no questions" message is shown inside the list now
+    updateSurveyToggle();
+
+    // Only the questions of the survey picked with the DINE-IN | DELIVERY toggle
+    const questions = activeQuestions();
+    const builtIns = builtInsFor(activeSurvey);
+    const isDelivery = activeSurvey === "delivery";
 
     if (summaryEl) {
-        const shown = surveyQuestions.filter(isVisible).length;
-        const hidden = surveyQuestions.length - shown;
-        summaryEl.textContent = `${BUILT_IN_QUESTIONS.length} built-in (${ratingConfig.categories.length} rating categories) · ` +
-            `${surveyQuestions.length} of your own (${shown} shown, ${hidden} hidden)`;
+        const shown = questions.filter(isVisible).length;
+        const hidden = questions.length - shown;
+        summaryEl.textContent = `${isDelivery ? "Delivery" : "Dine-in"} survey · ${builtIns.length} built-in (${activeRatingCfg().categories.length} rating categories) · ` +
+            `${questions.length} of your own (${shown} shown, ${hidden} hidden)`;
     }
 
     const sectionTitle = (title, text) => `
@@ -264,10 +350,23 @@ function renderSurveyQuestions() {
         </div>`;
 
     const builtInHtml = sectionTitle("Built-in questions", "Always asked first, in this order. You can edit the rating categories; the others are part of the survey itself.")
-        + BUILT_IN_QUESTIONS.map((b, i) => (b.group ? ratingGroupCardHtml(i + 1) : builtInCardHtml(b, i + 1))).join("");
+        + builtIns.map((b, i) => (b.group ? ratingGroupCardHtml(i + 1) : builtInCardHtml(b, i + 1))).join("");
+
+    const deliveryBanner = (isDelivery && questions.length === 0 && !deliverySeedDismissed()) ? `
+        <div class="bg-white border-2 border-dashed border-tvRed/50 rounded-[10px] px-6 py-4">
+            <p class="text-[14px] font-bold text-gray-900">Start with our recommended delivery questions</p>
+            <ul class="text-[12.5px] text-gray-600 mt-1.5 list-disc pl-5 space-y-0.5">
+                ${DELIVERY_SEED_QUESTIONS.map(q => `<li>${escapeHtml(q.question)} <span class="text-gray-400">(${q.type === "open_ended" ? "open-ended, optional" : "multiple choice"})</span></li>`).join("")}
+            </ul>
+            <p class="text-[12px] text-gray-500 mt-1.5">You can edit, reorder, hide or delete them afterwards.</p>
+            <div class="flex items-center gap-3 mt-3">
+                <button type="button" data-action="add-delivery-questions" class="px-4 py-2 text-[12.5px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors disabled:opacity-60">Add recommended delivery questions</button>
+                <button type="button" data-action="dismiss-delivery-questions" class="text-[12.5px] font-semibold text-gray-500 hover:text-gray-900">I'll write my own</button>
+            </div>
+        </div>` : "";
 
     const hasManagerSeed = surveyQuestions.some(q => q.seedKey === MANAGER_SEED_KEY);
-    const managerBanner = (!hasManagerSeed && !managerSeedDismissed()) ? `
+    const managerBanner = (!isDelivery && !hasManagerSeed && !managerSeedDismissed()) ? `
         <div class="bg-white border-2 border-dashed border-tvRed/50 rounded-[10px] px-6 py-4">
             <p class="text-[14px] font-bold text-gray-900">"Did the manager visit your table?" is now a normal question</p>
             <p class="text-[12.5px] text-gray-600 mt-1">It's no longer built in, so you can edit, reorder, hide or delete it. Add it back with its original 3 answers. It goes last, just like before.</p>
@@ -278,7 +377,7 @@ function renderSurveyQuestions() {
         </div>` : "";
 
     // Survey numbers: built-ins are 1..9, then each SHOWN question of yours continues the count
-    let nextNumber = BUILT_IN_QUESTIONS.length;
+    let nextNumber = builtIns.length;
     const numberFor = q => (isVisible(q) ? ++nextNumber : "–");
 
     const customHeader = sectionTitle("Your questions", "Asked after the built-in ones, in this order. The last one gets the Submit button.");
@@ -288,7 +387,7 @@ function renderSurveyQuestions() {
             <p class="text-[12px] text-gray-500 mt-1">Click <strong>+ Add Question</strong> to add one.</p>
         </div>`;
 
-    listEl.innerHTML = builtInHtml + customHeader + managerBanner + (surveyQuestions.length === 0 ? emptyCustom : surveyQuestions.map((q, idx) => {
+    listEl.innerHTML = builtInHtml + customHeader + managerBanner + deliveryBanner + (questions.length === 0 ? (deliveryBanner ? "" : emptyCustom) : questions.map((q, idx) => {
         const number = numberFor(q);
         const visible = isVisible(q);
         const typeBadge = q.type === "open_ended"
@@ -326,7 +425,7 @@ function renderSurveyQuestions() {
                                     class="p-0.5 text-gray-400 hover:text-gray-900 disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/></svg>
                             </button>
-                            <button type="button" data-action="move-question" data-dir="1" data-id="${escapeHtml(q.id)}" ${idx === surveyQuestions.length - 1 ? "disabled" : ""} aria-label="Move down" title="Move down"
+                            <button type="button" data-action="move-question" data-dir="1" data-id="${escapeHtml(q.id)}" ${idx === questions.length - 1 ? "disabled" : ""} aria-label="Move down" title="Move down"
                                     class="p-0.5 text-gray-400 hover:text-gray-900 disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                             </button>
@@ -435,13 +534,14 @@ async function handleAddSurveyQuestion(e) {
             await db.collection("surveyQuestions").doc(editId).update({ question, type, choices });
             showToast("Survey question updated successfully!");
         } else {
-            const maxOrder = surveyQuestions.reduce((m, q) => Math.max(m, Number(q.order) || 0), 0);
+            const maxOrder = activeQuestions().reduce((m, q) => Math.max(m, Number(q.order) || 0), 0);
             await db.collection("surveyQuestions").add({
                 question,
                 type,
                 choices,
                 visible: true,
                 order: maxOrder + 1,
+                ...(activeSurvey === "delivery" ? { survey: "delivery" } : {}), // dine-in questions have no field
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
             showToast("Survey question added successfully!");
@@ -471,7 +571,7 @@ async function deleteSurveyQuestion(questionId) {
 // Move a question up (dir = -1) or down (dir = 1). Renumbers the order 1..n in one batch,
 // which also tidies any gaps or duplicate numbers left by older edits.
 async function moveQuestion(questionId, dir, btn) {
-    const list = surveyQuestions.slice(); // already sorted by "order" (the live listener orders it)
+    const list = activeQuestions(); // this survey's questions, already sorted by "order"
     const i = list.findIndex(q => q.id === questionId);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= list.length) return;
@@ -563,6 +663,11 @@ document.addEventListener("DOMContentLoaded", () => {
             window.previewSurveyQuestion(btn.dataset.key);
         }
         if (btn.dataset.action === "add-manager-question") addManagerQuestion(btn);
+        if (btn.dataset.action === "add-delivery-questions") addDeliveryQuestions(btn);
+        if (btn.dataset.action === "dismiss-delivery-questions") {
+            try { localStorage.setItem(DELIVERY_SEED_DISMISSED, "1"); } catch {}
+            renderSurveyQuestions();
+        }
         if (btn.dataset.action === "dismiss-manager-question") {
             try { localStorage.setItem(MANAGER_SEED_DISMISSED, "1"); } catch {}
             renderSurveyQuestions();
@@ -627,6 +732,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     document.getElementById("sqType").addEventListener("change", renderChoicesUI);
+
+    // DINE-IN | DELIVERY toggle (Survey Questions page)
+    document.querySelectorAll("[data-survey-tab]").forEach(b =>
+        b.addEventListener("click", () => setActiveSurvey(b.dataset.surveyTab)));
+    updateSurveyToggle();
 
     subscribeToSurveyQuestions();
 });
