@@ -67,16 +67,16 @@
   </script>
   <!-- ?v= forces browsers to fetch the current files; bump it whenever these change -->
   <script src="js/firebase-config.js?v=20261116k"></script>
-  <script src="js/branches.js?v=20261114k"></script>
-  <script src="js/employees.js?v=20261114k"></script>
+  <script src="js/branches.js?v=20261116a"></script>
+  <script src="js/employees.js?v=20261116f"></script>
   <script src="js/ratingConfig.js?v=20261116d"></script>
-  <script src="js/surveyQuestions.js?v=20261116d"></script>
+  <script src="js/surveyQuestions.js?v=20261116e"></script>
   <script src="js/dashboard.js?v=20261116d"></script>
   <script src="js/voucherConfig.js?v=20261116a"></script>
-  <script src="js/vouchers.js?v=20261116b"></script>
-  <script src="js/reviewsInsights.js?v=20261116e"></script>
+  <script src="js/vouchers.js?v=20261116c"></script>
+  <script src="js/reviewsInsights.js?v=20261116l"></script>
   <script src="js/reviewsExport.js?v=20261116a"></script>
-  <script src="js/storeAccounts.js?v=20261116g"></script>
+  <script src="js/storeAccounts.js?v=20261116h"></script>
 </head>
 <body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
   <script>activateAppCheck();</script>
@@ -273,7 +273,7 @@
             <option value="All">All Branches (Network Wide)</option>
           </select>
         </div>
-        <div class="flex items-center gap-2 px-1">
+        <div id="typeWrap" class="flex items-center gap-2 px-1">
           <label for="surveyTypeSelect" class="text-[11px] font-semibold tracking-[0.04em] text-gray-500 uppercase shrink-0">Type</label>
           <select id="surveyTypeSelect" class="text-[13px] font-semibold text-gray-900 bg-white border border-gray-300 rounded-[6px] px-2.5 py-1.5 focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed cursor-pointer">
             <option value="All">All (Dine-in + Delivery)</option>
@@ -289,6 +289,17 @@
             <option value="90">Last 90 days</option>
             <option value="0">All time</option>
           </select>
+        </div>
+        <!-- Employees page only: replaces the Type filter -->
+        <div id="employeeSearchWrap" class="flex-1 hidden flex items-center gap-2 min-w-0">
+          <div class="relative flex-1 min-w-0">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+            </div>
+            <input type="search" id="employeeSearchInput" placeholder="Search employee by name, position or branch..." aria-label="Search employee" class="w-full pl-9 pr-3 py-1.5 text-[13px] border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+          </div>
+          <!-- Staff with no branch (e.g. their branch was deleted). Styled by js/employees.js -->
+          <button type="button" id="unassignedFilterBtn" aria-pressed="false" class="shrink-0 px-3 py-1.5 rounded-[6px] text-[12px] font-semibold border transition-colors">Unassigned</button>
         </div>
         <div id="searchWrap" class="relative flex-1 hidden">
           <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
@@ -376,8 +387,10 @@
           </select>
         </div>
 
-        <!-- 1 card per row on smaller screens, 2 side by side from 1280px wide -->
-        <div id="allReviewsFeed" class="grid grid-cols-1 xl:grid-cols-2 gap-[14px]"></div>
+        <!-- 1 card per row on phones, 2 on tablets/small laptops, 3 from 1360px wide -->
+        <div id="allReviewsFeed" class="grid grid-cols-1 lg:grid-cols-2 min-[1360px]:grid-cols-3 gap-[14px]"></div>
+        <!-- "See more": the feed shows a batch at a time (renderReviewsFeed fills this) -->
+        <div id="allReviewsMore" class="hidden mt-6 mb-2 flex flex-col items-center gap-2"></div>
 
         <div id="emptyReviewsState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
           <h3 class="text-[15px] font-bold text-gray-900">No reviews found matching your criteria</h3>
@@ -390,7 +403,8 @@
       <!-- ===== EMPLOYEES VIEW ===== -->
       <section id="employeesView" class="hidden">
         <p id="employeesSummary" class="text-[12px] text-gray-500 mb-3"></p>
-        <div id="employeesList" class="space-y-[10px]"></div>
+        <!-- 1 card per row on phones, 2 on tablets/laptops, 3 from 1280px wide -->
+        <div id="employeesList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[12px]"></div>
         <div id="emptyEmployeesState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
           <h3 id="emptyEmployeesTitle" class="text-[15px] font-bold text-gray-900">No employees found</h3>
           <p id="emptyEmployeesText" class="text-[12px] text-gray-500 mt-1">Add your first employee to get started.</p>
@@ -617,6 +631,55 @@
   </div>
 
   <!-- Resolve Modal: staff mark that action was taken on a review (internal, the customer isn't notified) -->
+  <!-- Styled confirmation (replaces the browser's plain confirm()). Filled and opened by confirmDialog().
+       role="alertdialog" on purpose: the generic [role=dialog] Escape/backdrop handlers don't touch it,
+       and z-[60] keeps it above an open modal (e.g. the employee form underneath). -->
+  <div id="confirmDialogBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-[60]" role="alertdialog" aria-modal="true" aria-labelledby="confirmDialogTitle" aria-describedby="confirmDialogBody">
+    <div class="bg-white rounded-[12px] border border-gray-200 w-full max-w-md shadow-2xl overflow-hidden">
+      <div class="px-6 pt-6 pb-5 flex gap-4">
+        <div id="confirmDialogIcon" class="w-11 h-11 rounded-full flex items-center justify-center shrink-0" aria-hidden="true"></div>
+        <div class="min-w-0 flex-1">
+          <h3 id="confirmDialogTitle" class="text-[17px] font-bold text-gray-900 leading-snug"></h3>
+          <div id="confirmDialogBody" class="mt-2 text-[13.5px] text-gray-600 leading-relaxed space-y-3"></div>
+        </div>
+      </div>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-2.5">
+        <button type="button" id="confirmDialogCancel" class="px-4 py-2 text-[13px] font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-100 rounded-[6px] transition-colors"></button>
+        <button type="button" id="confirmDialogOk" class="px-4 py-2 text-[13px] font-semibold text-white rounded-[6px] transition-colors"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Branch: the admin must type the branch name (shown here with a Copy button) -->
+  <div id="deleteBranchModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="deleteBranchHeading">
+    <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="deleteBranchHeading" class="text-lg font-bold text-gray-900">Delete Branch</h3>
+        <button type="button" data-close-modal class="text-gray-400 hover:text-gray-700 p-1 rounded-lg" aria-label="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div id="deleteBranchNotes" class="hidden text-[12.5px] text-gray-600 mt-1 space-y-0.5"></div>
+      <form id="deleteBranchForm" class="space-y-4 mt-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Branch name</p>
+          <div class="flex gap-2">
+            <code id="deleteBranchName" class="flex-1 min-w-0 px-3 py-2 text-[13px] font-semibold text-gray-900 bg-gray-50 border border-gray-200 rounded-[6px] select-all break-words"></code>
+            <button type="button" id="deleteBranchCopyBtn" class="px-3 py-2 text-[12px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors shrink-0">Copy</button>
+          </div>
+        </div>
+        <div>
+          <label for="deleteBranchConfirmInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Type the branch name to confirm</label>
+          <input id="deleteBranchConfirmInput" type="text" autocomplete="off" spellcheck="false" class="w-full px-3.5 py-2.5 text-sm border border-gray-300 rounded-[6px] focus:outline-none focus:border-tvRed focus:ring-1 focus:ring-tvRed" />
+        </div>
+        <div class="flex items-center justify-end gap-2.5 pt-2">
+          <button type="button" data-close-modal class="px-4 py-2 text-[13px] font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-[6px] transition-colors">Cancel</button>
+          <button type="submit" id="deleteBranchSubmitBtn" disabled class="px-4 py-2 text-[13px] font-semibold text-white bg-tvRed hover:bg-tvRedHover rounded-[6px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-tvRed">Delete branch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div id="resolveModalBackdrop" class="fixed inset-0 bg-black/50 backdrop-blur-[1px] hidden items-center justify-center p-4 z-50" role="dialog" aria-modal="true" aria-labelledby="resolveModalHeading">
     <div class="bg-white rounded-[10px] border border-gray-200 w-full max-w-md p-6 shadow-xl">
       <div class="flex items-center justify-between mb-2">
@@ -910,6 +973,67 @@
       toastTimer = setTimeout(() => toast.classList.add("translate-y-16", "opacity-0"), 3200);
     }
 
+    // ---------- Confirmation dialog (styled replacement for confirm()) ----------
+    // await confirmDialog({ title, body, confirmLabel, cancelLabel, tone }) → true (confirm) / false (cancel).
+    // body: HTML string. Escape any user/database text inside it with escapeHtml().
+    // tone: "warning" (amber), "danger" (red trash, for deletes) or "info" (ticket, e.g. redeeming).
+    // Escape, Cancel and clicking outside all mean "no".
+    const CONFIRM_ICONS = {
+      info: { wrap: "bg-gray-100 text-gray-700 ring-4 ring-gray-50", ok: "bg-tvRed hover:bg-tvRedHover",
+        svg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z"/></svg>' },
+      warning: { wrap: "bg-amber-50 text-amber-600 ring-4 ring-amber-50/60", ok: "bg-tvRed hover:bg-tvRedHover",
+        svg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>' },
+      danger: { wrap: "bg-red-50 text-tvRed ring-4 ring-red-50/60", ok: "bg-tvRed hover:bg-tvRedHover",
+        svg: '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>' }
+    };
+
+    function confirmDialog({ title, body = "", confirmLabel = "Continue", cancelLabel = "Cancel", tone = "warning" } = {}) {
+      const el = document.getElementById("confirmDialogBackdrop");
+      const icon = CONFIRM_ICONS[tone] || CONFIRM_ICONS.warning;
+      const okBtn = document.getElementById("confirmDialogOk");
+      const cancelBtn = document.getElementById("confirmDialogCancel");
+      const iconEl = document.getElementById("confirmDialogIcon");
+      iconEl.className = `w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${icon.wrap}`;
+      iconEl.innerHTML = icon.svg;
+      document.getElementById("confirmDialogTitle").textContent = title || "Are you sure?";
+      document.getElementById("confirmDialogBody").innerHTML = body;
+      okBtn.textContent = confirmLabel;
+      okBtn.className = `px-4 py-2 text-[13px] font-semibold text-white rounded-[6px] transition-colors ${icon.ok}`;
+      cancelBtn.textContent = cancelLabel;
+      const returnFocus = document.activeElement;
+      el.classList.remove("hidden");
+      el.classList.add("flex");
+      setTimeout(() => cancelBtn.focus(), 30); // safe default: Enter right away = Cancel
+
+      return new Promise(resolve => {
+        const done = answer => {
+          el.classList.add("hidden");
+          el.classList.remove("flex");
+          okBtn.removeEventListener("click", onOk);
+          cancelBtn.removeEventListener("click", onCancel);
+          el.removeEventListener("click", onBackdrop);
+          window.removeEventListener("keydown", onKey, true);
+          if (returnFocus && typeof returnFocus.focus === "function") returnFocus.focus();
+          resolve(answer);
+        };
+        const onOk = () => done(true);
+        const onCancel = () => done(false);
+        const onBackdrop = e => { if (e.target === el) done(false); };
+        // Capture phase + stop: Escape closes ONLY this dialog, not the modal underneath
+        const onKey = e => {
+          if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); done(false); }
+          if (e.key === "Tab") { // keep focus on the two buttons
+            e.preventDefault();
+            (document.activeElement === okBtn ? cancelBtn : okBtn).focus();
+          }
+        };
+        okBtn.addEventListener("click", onOk);
+        cancelBtn.addEventListener("click", onCancel);
+        el.addEventListener("click", onBackdrop);
+        window.addEventListener("keydown", onKey, true);
+      });
+    }
+
     // ---------- Modals ----------
     function openModal(id) {
       const m = document.getElementById(id);
@@ -970,6 +1094,9 @@
       document.getElementById("activeBranchBadge").classList.toggle("hidden", !cfg.filters);
       document.getElementById("searchWrap").classList.toggle("hidden", !cfg.search);
       document.getElementById("periodWrap").classList.toggle("hidden", currentView !== "reviews");
+      // Employees aren't split by Dine-in/Delivery, so that page gets a search box instead
+      document.getElementById("typeWrap").classList.toggle("hidden", currentView === "employees");
+      document.getElementById("employeeSearchWrap").classList.toggle("hidden", currentView !== "employees");
 
       if (currentView === "dashboard") renderDashboardBranches();
       if (currentView === "reviews") { renderReviewsFeed(); renderReviewsTab(); } // the tab also decides if search shows
@@ -1032,7 +1159,11 @@
       renderReviewsTab();
     }
 
-    document.getElementById("branchSelect").addEventListener("change", e => selectBranch(e.target.value));
+    document.getElementById("branchSelect").addEventListener("change", e => {
+      // Picking a branch on the Employees page turns the "Unassigned" chip off (they can't combine)
+      if (e.target.value !== "All") employeeUnassignedOnly = false;
+      selectBranch(e.target.value);
+    });
 
     // Dine-in / Delivery filter (js/dashboard.js scopedSubmissions + js/reviewsInsights.js reviewsInScope)
     document.getElementById("surveyTypeSelect").addEventListener("change", e => {
@@ -1145,6 +1276,7 @@
               ${inactive ? "" : `<button type="button" data-action="qr" data-id="${escapeHtml(b.id)}" class="px-3 py-1.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white text-[12px] font-semibold transition-colors">QR Code</button>`}
               <button type="button" data-action="edit" data-id="${escapeHtml(b.id)}" class="px-3 py-1.5 rounded-[6px] border border-gray-200 text-gray-700 hover:bg-gray-100 text-[12px] font-semibold transition-colors">Edit</button>
               <button type="button" data-action="toggle" data-id="${escapeHtml(b.id)}" class="px-3 py-1.5 rounded-[6px] border border-gray-200 text-gray-600 hover:bg-gray-100 text-[12px] font-semibold transition-colors">${inactive ? "Reactivate" : "Deactivate"}</button>
+              <button type="button" data-action="delete" data-id="${escapeHtml(b.id)}" aria-label="Delete ${escapeHtml(b.name)}" class="px-3 py-1.5 rounded-[6px] border border-gray-200 text-gray-500 hover:border-tvRed hover:text-tvRed hover:bg-white text-[12px] font-semibold transition-colors">Delete</button>
             </div>
           </article>
         `;
@@ -1158,6 +1290,100 @@
       if (btn.dataset.action === "edit") openBranchModal(id);
       if (btn.dataset.action === "toggle") toggleBranchStatus(id);
       if (btn.dataset.action === "qr") openQrModal(id);
+      if (btn.dataset.action === "delete") deleteBranch(id);
+    });
+
+    // Permanent. The branch's employees move to "Unassigned" (branchId "") in the same batch, so their
+    // profiles and staff ratings stay. Reviews are kept: each one stores the branch name, and new
+    // branches never reuse this id.
+    async function deleteBranch(id) {
+      const b = branches.find(x => x.id === id);
+      if (!b) return;
+      const staffCount = employees.filter(e => e.branchId === id).length;
+      const kiosks = branchKioskInvites(id);
+      deleteBranchTargetId = id;
+      document.getElementById("deleteBranchName").textContent = b.name;
+      const notes = [];
+      if (staffCount) notes.push(`Its ${staffCount} employee${staffCount === 1 ? "" : "s"} will move to "Unassigned" and keep their ratings.`);
+      kiosks.forEach(inv => notes.push(inv.status === "active"
+        ? `Its kiosk account (${inv.email}) will be revoked.`
+        : `The pending kiosk invite for ${inv.email} will be cancelled.`));
+      const notesEl = document.getElementById("deleteBranchNotes");
+      notesEl.innerHTML = notes.map(n => `<p>${escapeHtml(n)}</p>`).join("");
+      notesEl.classList.toggle("hidden", !notes.length);
+      document.getElementById("deleteBranchConfirmInput").value = "";
+      document.getElementById("deleteBranchSubmitBtn").disabled = true;
+      document.getElementById("deleteBranchCopyBtn").textContent = "Copy";
+      openModal("deleteBranchModalBackdrop"); // focuses the confirm box
+    }
+
+    // Kiosk invites/accounts of a branch that are still usable (js/storeAccounts.js loads storeInvites)
+    function branchKioskInvites(branchId) {
+      return (typeof storeInvites !== "undefined" ? storeInvites : [])
+        .filter(inv => inv.branchId === branchId && inv.status !== "revoked");
+    }
+
+    let deleteBranchTargetId = null;
+    const deleteBranchTarget = () => branches.find(x => x.id === deleteBranchTargetId);
+    const deleteBranchNameMatches = () => {
+      const b = deleteBranchTarget();
+      return !!b && document.getElementById("deleteBranchConfirmInput").value.trim() === String(b.name).trim();
+    };
+
+    document.getElementById("deleteBranchConfirmInput").addEventListener("input", () => {
+      document.getElementById("deleteBranchSubmitBtn").disabled = !deleteBranchNameMatches();
+    });
+
+    document.getElementById("deleteBranchCopyBtn").addEventListener("click", async e => {
+      const b = deleteBranchTarget();
+      if (!b) return;
+      try {
+        await navigator.clipboard.writeText(b.name);
+        e.currentTarget.textContent = "Copied";
+      } catch {
+        // Clipboard blocked: select the name so Ctrl+C works
+        const sel = window.getSelection();
+        sel.selectAllChildren(document.getElementById("deleteBranchName"));
+      }
+    });
+
+    document.getElementById("deleteBranchForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const b = deleteBranchTarget();
+      if (!b || !deleteBranchNameMatches()) return;
+      const btn = document.getElementById("deleteBranchSubmitBtn");
+      btn.disabled = true;
+      try {
+        // One batch: either everything happens or nothing does (max 500 writes; a branch never has that many staff)
+        const staff = employees.filter(x => x.branchId === b.id);
+        const batch = db.batch();
+        staff.forEach(emp => batch.update(db.collection("employees").doc(emp.id), {
+          branchId: "",
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }));
+        // Its kiosk can't keep redeeming for a branch that's gone: same revoke as js/storeAccounts.js
+        const kiosks = branchKioskInvites(b.id);
+        kiosks.forEach(inv => {
+          if (inv.uid) batch.delete(db.collection("stores").doc(inv.uid));
+          batch.update(db.collection("storeInvites").doc(inv.id), {
+            status: "revoked",
+            revokedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        });
+        batch.delete(db.collection("branches").doc(b.id)); // the branch filter resets itself (onBranchesChanged)
+        await batch.commit();
+        closeModal(document.getElementById("deleteBranchModalBackdrop"));
+        const extras = [];
+        if (staff.length) extras.push(`${staff.length} employee${staff.length === 1 ? "" : "s"} moved to Unassigned.`);
+        if (kiosks.length) extras.push("Kiosk access revoked.");
+        showToast(`Branch "${b.name}" deleted.${extras.length ? " " + extras.join(" ") : ""}`);
+      } catch (err) {
+        console.error("Error deleting branch:", err);
+        btn.disabled = false;
+        showToast(err.code === "permission-denied"
+          ? "Couldn't delete: publish the latest Firestore rules first."
+          : "Failed to delete the branch. Please try again.");
+      }
     });
 
     function openBranchModal(editId = null) {
@@ -1216,7 +1442,14 @@
       const b = branches.find(x => x.id === id);
       if (!b) return;
       const deactivate = b.status !== "inactive";
-      if (deactivate && !confirm(`Deactivate "${b.name}"? It will disappear from the customer survey. Its reviews and staff are kept.`)) return;
+      if (deactivate && !(await confirmDialog({
+        tone: "warning",
+        title: `Deactivate ${b.name}?`,
+        body: `<p>It disappears from the customer survey and its QR codes stop accepting new reviews.</p>
+               <p>Its reviews and staff are kept, and you can reactivate it any time.</p>`,
+        confirmLabel: "Deactivate",
+        cancelLabel: "Keep active"
+      }))) return;
       try {
         await db.collection("branches").doc(id).update({
           status: deactivate ? "inactive" : "active",
@@ -1470,10 +1703,25 @@
       return allReviews;
     }
 
+    // The feed shows FEED_PAGE reviews at a time; "See more" adds the next batch.
+    // A filter change starts again at one batch; live updates keep what's already shown.
+    const FEED_PAGE = 12;
+    let feedLimit = FEED_PAGE;
+    let lastFeedKey = "";
+
     function renderReviewsFeed() {
       const feedEl = document.getElementById("allReviewsFeed");
       const emptyEl = document.getElementById("emptyReviewsState");
+      const moreEl = document.getElementById("allReviewsMore");
       if (!feedEl) return;
+
+      const feedKey = JSON.stringify([selectedBranchId, selectedSurveyFilter,
+        typeof selectedPeriodDays !== "undefined" ? selectedPeriodDays : 0, selectedStaffFilter, selectedStarFilter,
+        selectedSentimentFilter, selectedResolvedFilter, currentSearch.trim().toLowerCase()]);
+      if (feedKey !== lastFeedKey) {
+        lastFeedKey = feedKey;
+        feedLimit = FEED_PAGE;
+      }
 
       let allReviews = feedReviewItems();
 
@@ -1490,9 +1738,25 @@
       if (allReviews.length === 0) {
         feedEl.innerHTML = "";
         emptyEl.classList.remove("hidden");
+        moreEl.classList.add("hidden");
         return;
       }
       emptyEl.classList.add("hidden");
+
+      // One batch at a time + the "See more" bar underneath
+      const total = allReviews.length;
+      allReviews = allReviews.slice(0, feedLimit);
+      const shown = allReviews.length;
+      const remaining = total - shown;
+      moreEl.classList.toggle("hidden", total <= FEED_PAGE);
+      moreEl.innerHTML = total <= FEED_PAGE ? "" : `
+        <p class="text-[12.5px] text-gray-500">Showing <strong class="text-gray-900">${shown}</strong> of <strong class="text-gray-900">${total}</strong> reviews</p>
+        ${remaining > 0 ? `
+        <button type="button" data-feed="more" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white border border-gray-300 hover:border-tvRed hover:text-tvRed text-[13px] font-semibold text-gray-800 shadow-sm transition-colors">
+          See ${Math.min(FEED_PAGE, remaining)} more
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+        </button>` : ""}
+        ${shown > FEED_PAGE ? `<button type="button" data-feed="less" class="text-[12px] font-medium text-gray-500 hover:text-gray-900 transition-colors">Show less</button>` : ""}`;
 
       const badgeClass = {
         "Positive": "bg-gray-100 text-gray-700",
@@ -1564,6 +1828,19 @@
         </article>
       `).join("");
     }
+
+    document.getElementById("allReviewsMore").addEventListener("click", e => {
+      const btn = e.target.closest("[data-feed]");
+      if (!btn) return;
+      if (btn.dataset.feed === "more") {
+        feedLimit += FEED_PAGE;
+        renderReviewsFeed(); // new cards appear below; the page doesn't jump
+      } else {
+        feedLimit = FEED_PAGE;
+        renderReviewsFeed();
+        document.getElementById("reviewsTabs").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
 
     // Keep "full response" panels open across live re-renders
     const openFullResponses = new Set();
@@ -1692,7 +1969,14 @@
     async function reopenReview(reviewId) {
       const s = surveySubmissions.find(x => x.id === reviewId);
       if (!s) return;
-      if (!confirm(`Reopen the feedback from ${s.customerName || "Anonymous"}? It will show as not resolved again.`)) return;
+      if (!(await confirmDialog({
+        tone: "warning",
+        title: "Reopen this feedback?",
+        body: `<p>The feedback from <strong class="text-gray-900">${escapeHtml(s.customerName || "Anonymous")}</strong> will show as <strong class="text-gray-900">not resolved</strong> again.</p>`
+          + (s.resolutionNote ? `<p class="text-[12.5px] text-gray-500">Its resolution note is kept: "${escapeHtml(s.resolutionNote)}"</p>` : ""),
+        confirmLabel: "Reopen",
+        cancelLabel: "Keep resolved"
+      }))) return;
       try {
         await db.collection("surveys").doc(reviewId).update({ resolved: false });
         showToast("Reopened.");

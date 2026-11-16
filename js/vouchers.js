@@ -162,10 +162,19 @@ async function redeemVoucher(id, btn) {
         return;
     }
     // Ownership check at the counter: customers never log in, so staff confirm the email
-    if (!confirm(
-        `First ask the customer to show the voucher email sent to:\n${v.email}\n\n` +
-        `Redeem voucher ${v.code} (${voucherDeal(v).text}) at ${branchName(branchId)}?\n` +
-        `It can only be used once.`)) return;
+    if (!(await confirmDialog({
+        tone: "info",
+        title: `Redeem voucher ${v.code}?`,
+        body: `
+            <div class="rounded-[8px] border border-gray-200 bg-gray-50 px-3.5 py-2.5 space-y-1">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.04em] text-gray-500">First, ask to see the voucher email sent to</p>
+                <p class="font-semibold text-gray-900 break-all">${escapeHtml(v.email)}</p>
+            </div>
+            <p><strong class="text-gray-900">${escapeHtml(voucherDeal(v).text)}</strong> at <strong class="text-gray-900">${escapeHtml(branchName(branchId))}</strong>.
+               It can only be used once.</p>`,
+        confirmLabel: "Redeem voucher",
+        cancelLabel: "Not yet"
+    }))) return;
     if (btn) btn.disabled = true;
     try {
         await db.collection("vouchers").doc(id).update({

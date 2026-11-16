@@ -23,7 +23,40 @@ let activeReviewTab = (() => {
 })();
 let selectedPeriodDays = 30;           // 7 | 30 | 90 | 0 (= all time)
 let suggestionSource = "all";          // all | comment | atmosphere | question
-let suggestionLimit = 50;
+const SUGGESTION_PAGE = 24;            // tiles per "See more" (fills rows of 2 or 3)
+let suggestionLimit = SUGGESTION_PAGE;
+let suggestionTone = "all";            // all | bad | mixed | good (Highlights cards on the Suggestions tab)
+
+// Tone of a written answer, from the overall stars of its review
+const SUGGESTION_TONES = {
+    // mark = highlighter behind the customer's text in the tiles (the tiles themselves stay grey)
+    bad:   { label: "Needs attention", hint: "1–2★ reviews", dot: "bg-red-500",     on: "border-red-300 bg-red-50",         num: "text-red-600",     mark: "bg-red-100 text-red-950" },
+    mixed: { label: "Mixed",           hint: "3★ reviews",   dot: "bg-amber-400",   on: "border-amber-300 bg-amber-50",     num: "text-amber-600",   mark: "bg-amber-100 text-amber-950" },
+    good:  { label: "Praise",          hint: "4–5★ reviews", dot: "bg-emerald-500", on: "border-emerald-300 bg-emerald-50", num: "text-emerald-600", mark: "bg-emerald-100 text-emerald-950" }
+};
+const toneOf = stars => (!stars ? null : stars <= 2 ? "bad" : stars === 3 ? "mixed" : "good");
+
+// Words that say nothing on their own (English + Filipino/Taglish), left out of "Most mentioned"
+const SUGGESTION_STOPWORDS = new Set(("a an and are as at be been but by can could did do does dont don't for from had has have " +
+    "he her him his how i i'm im if in into is it it's its just me more most my no not of on one or our out so some " +
+    "than that the their them then there these they this to too up us very was we were what when which who why will " +
+    "with would you your yours also all any get got really much many make made please thank thanks ok okay " +
+    "ang ng mga sa na at ay po yung yun lang din rin kasi pero sobrang ko ako kami namin ito yan naman talaga nang " +
+    "para may wala hindi di si ni kay nila siya sila tayo natin mo ka ba nga pa pala eh ha sana kung mas kayo ninyo nyo")
+    .split(/\s+/));
+
+// Most-mentioned words across the answers (counted once per answer)
+function topSuggestionWords(items, limit = 8) {
+    const counts = new Map();
+    items.forEach(i => {
+        const words = new Set((i.text.toLowerCase().match(/[\p{L}][\p{L}'’-]{2,}/gu) || [])
+            .map(w => w.replace(/['’-]+$/g, ""))
+            .filter(w => w.length >= 3 && !SUGGESTION_STOPWORDS.has(w)));
+        words.forEach(w => counts.set(w, (counts.get(w) || 0) + 1));
+    });
+    return [...counts.entries()].filter(([, n]) => n >= 2)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit);
+}
 const expandedRows = new Set();        // expanded branch / staff rows
 
 // ---------- data helpers ----------
@@ -337,27 +370,83 @@ function renderSuggestionsTab() {
             ${label} <span class="${suggestionSource === id ? "text-white/80" : "text-gray-400"}">${counts[id]}</span>
         </button>`;
 
-    const list = items.slice(0, suggestionLimit).map(i => `
-        <article class="py-3.5 border-b border-gray-100 last:border-b-0">
-            <p class="text-[13.5px] text-gray-800 leading-relaxed break-words">"${escapeHtml(i.text)}"</p>
-            <p class="text-[11.5px] text-gray-500 mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
+    // ---------- Highlights: tone counts (click = filter) + most-mentioned words (click = search) ----------
+    const toneCounts = { bad: 0, mixed: 0, good: 0 };
+    items.forEach(i => { const t = toneOf(i.stars); if (t) toneCounts[t]++; });
+    const toneCard = id => {
+        const t = SUGGESTION_TONES[id];
+        const active = suggestionTone === id;
+        return `
+            <button type="button" data-tone="${id}" aria-pressed="${active}"
+                    class="text-left rounded-[8px] border px-4 py-3 transition-colors ${active ? t.on : "border-gray-200 bg-white hover:border-gray-400"}">
+                <span class="flex items-center gap-2 text-[12px] font-semibold text-gray-600">
+                    <span class="w-2 h-2 rounded-full ${t.dot}"></span>${t.label}
+                </span>
+                <span class="block text-[24px] font-bold leading-tight mt-1 ${t.num}">${toneCounts[id]}</span>
+                <span class="block text-[11px] text-gray-400">${t.hint}${items.length ? ` · ${pct(toneCounts[id], items.length)}%` : ""}</span>
+            </button>`;
+    };
+    const words = topSuggestionWords(items);
+    const highlights = items.length ? `
+        <section class="bg-white border border-gray-200 rounded-[10px] px-6 py-5 mb-[18px] shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+            <div class="flex items-baseline justify-between gap-3 mb-3">
+                <h2 class="text-[15px] font-bold text-gray-900">Highlights</h2>
+                ${suggestionTone !== "all" ? `<button type="button" data-tone="all" class="text-[12px] font-semibold text-tvRed hover:underline">Show all tones</button>` : `<span class="text-[11.5px] text-gray-400">Click a card to filter</span>`}
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">${toneCard("bad")}${toneCard("mixed")}${toneCard("good")}</div>
+            ${words.length ? `
+            <div class="mt-4">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.04em] text-gray-500 mb-2">Most mentioned</p>
+                <div class="flex flex-wrap gap-1.5">${words.map(([w, n]) => `
+                    <button type="button" data-word="${escapeHtml(w)}" title="Search for “${escapeHtml(w)}”"
+                            class="px-2.5 py-1 rounded-full text-[12px] font-semibold border transition-colors ${q === w ? "bg-tvRed text-white border-tvRed" : "bg-gray-50 text-gray-700 border-gray-200 hover:border-tvRed hover:text-tvRed"}">
+                        ${escapeHtml(w)} <span class="${q === w ? "text-white/80" : "text-gray-400"} font-medium">${n}</span>
+                    </button>`).join("")}</div>
+            </div>` : ""}
+        </section>` : "";
+    if (suggestionTone !== "all") items = items.filter(i => toneOf(i.stars) === suggestionTone);
+
+    // Tiles: 1 per row on phones, 2 on laptops, 3 from 1360px (same breakpoints as All reviews).
+    // Highlighted text in the tone colour: red 1–2★, yellow 3★, green 4–5★ (grey: no stars)
+    const shown = items.slice(0, suggestionLimit);
+    const tiles = shown.map(i => {
+        const t = SUGGESTION_TONES[toneOf(i.stars)];
+        return `
+        <article class="flex flex-col min-w-0 rounded-[8px] border border-gray-200 bg-gray-50/60 px-4 py-3.5">
+            <span class="self-start flex items-center gap-1.5 max-w-full mb-2">
+                <span class="px-1.5 py-0.5 rounded bg-white border border-gray-200 text-[10.5px] font-semibold text-gray-600 truncate">${escapeHtml(i.sourceLabel)}</span>
+                ${t && toneOf(i.stars) === "bad" ? `<span class="px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[10.5px] font-semibold shrink-0">Needs attention</span>` : ""}
+            </span>
+            <p class="text-[15px] font-semibold leading-[1.9] break-words"><mark class="${t ? t.mark : "bg-gray-200/70 text-gray-900"} px-1.5 py-0.5 rounded-[4px] [box-decoration-break:clone] [-webkit-box-decoration-break:clone]">"${escapeHtml(i.text)}"</mark></p>
+            <p class="text-[11.5px] text-gray-500 mt-auto pt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                 <span class="font-semibold text-gray-700">${escapeHtml(i.name)}</span>
                 <span>· ${escapeHtml(i.branch)}</span>
                 <span>· ${escapeHtml(fmtDate(i.time))}</span>
                 ${i.stars ? `<span class="text-tvRed" aria-label="${i.stars} stars">· ${"★".repeat(i.stars)}</span>` : ""}
-                <span class="px-1.5 rounded bg-gray-100 text-gray-600 max-w-full truncate">${escapeHtml(i.sourceLabel)}</span>
             </p>
-        </article>`).join("");
+        </article>`;
+    }).join("");
+    const list = tiles
+        ? `<div class="grid grid-cols-1 lg:grid-cols-2 min-[1360px]:grid-cols-3 gap-3">${tiles}</div>` : "";
 
-    const more = items.length > suggestionLimit
-        ? `<button type="button" data-more-suggestions class="mt-3 w-full py-2 text-[12.5px] font-semibold text-gray-600 border border-gray-200 rounded-[6px] hover:bg-gray-50">Show more (${items.length - suggestionLimit} left)</button>` : "";
+    const remaining = items.length - shown.length;
+    const more = remaining > 0 ? `
+        <div class="mt-6 mb-2 flex flex-col items-center gap-2">
+            <p class="text-[12.5px] text-gray-500">Showing <strong class="text-gray-900">${shown.length}</strong> of <strong class="text-gray-900">${items.length}</strong> answers</p>
+            <button type="button" data-more-suggestions class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white border border-gray-300 hover:border-tvRed hover:text-tvRed text-[13px] font-semibold text-gray-800 shadow-sm transition-colors">
+                See ${Math.min(SUGGESTION_PAGE, remaining)} more
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+            </button>
+        </div>` : "";
 
     return `
         <div class="flex flex-wrap gap-2 mb-4">
             ${chip("all", "All")}${chip("comment", "Review comments")}${chip("atmosphere", "Atmosphere")}${chip("question", "Your open questions")}
         </div>
-        ${card("What customers wrote", `${items.length} answer${items.length === 1 ? "" : "s"} · newest first · ${periodLabel()}`,
-            list || emptyNote(q ? "Nothing matches your search." : "No written answers yet.")) }
+        ${highlights}
+        ${card("What customers wrote",
+            `${items.length} answer${items.length === 1 ? "" : "s"}${suggestionTone !== "all" ? ` · ${SUGGESTION_TONES[suggestionTone].label.toLowerCase()}` : ""} · newest first · ${periodLabel()}`,
+            list || emptyNote(q ? "Nothing matches your search." : suggestionTone !== "all" ? "No answers with this tone." : "No written answers yet.")) }
         ${more}`;
 }
 
@@ -487,7 +576,7 @@ function renderQuestionsTab() {
 // Full response block for one review in the All reviews tab
 function fullResponseHtml(s) {
     const row = (label, value) => `
-        <div class="grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
+        <div class="grid grid-cols-[minmax(0,42%)_minmax(0,1fr)] gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
             <span class="text-[12px] text-gray-500 break-words">${label}</span>
             <span class="text-[12.5px] text-gray-900 break-words">${value}</span>
         </div>`;
@@ -585,8 +674,24 @@ document.addEventListener("DOMContentLoaded", () => {
             return renderReviewsTab();
         }
         const src = e.target.closest("[data-source]");
-        if (src) { suggestionSource = src.dataset.source; suggestionLimit = 50; return renderReviewsTab(); }
-        if (e.target.closest("[data-more-suggestions]")) { suggestionLimit += 50; return renderReviewsTab(); }
+        if (src) { suggestionSource = src.dataset.source; suggestionLimit = SUGGESTION_PAGE; return renderReviewsTab(); }
+        const tone = e.target.closest("[data-tone]");
+        if (tone) {
+            // Click the active card again to show every tone
+            suggestionTone = tone.dataset.tone === suggestionTone ? "all" : tone.dataset.tone;
+            suggestionLimit = SUGGESTION_PAGE;
+            return renderReviewsTab();
+        }
+        const word = e.target.closest("[data-word]");
+        if (word) {
+            // Fill the page's search box (same as typing it); clicking the active word clears it
+            const input = document.getElementById("searchInput");
+            const w = word.dataset.word;
+            input.value = (input.value.trim().toLowerCase() === w) ? "" : w;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            return;
+        }
+        if (e.target.closest("[data-more-suggestions]")) { suggestionLimit += SUGGESTION_PAGE; return renderReviewsTab(); }
     });
 
     const period = document.getElementById("periodSelect");

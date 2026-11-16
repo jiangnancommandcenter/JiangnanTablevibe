@@ -84,7 +84,9 @@ service cloud.firestore {
       allow read: if true;   // the public survey lists active branches
       allow create, update: if isAdmin() && validBranch(request.resource.data)
                             && branchId.size() <= 50;
-      allow delete: if false; // deactivate instead: old reviews reference the id
+      // Admins only. Old reviews keep their branchName; the dashboard moves the branch's staff to
+      // "Unassigned" (branchId "") in the same batch and never reuses a deleted id for a new branch.
+      allow delete: if isAdmin();
     }
 
     // ============================================

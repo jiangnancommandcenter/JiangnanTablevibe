@@ -39,7 +39,12 @@ function uniqueBranchId(name) {
         .replace(/^-+|-+$/g, "")
         .slice(0, 40) || "branch";
     let id = base;
-    for (let n = 2; branches.some(b => b.id === id); n++) id = `${base}-${n}`;
+    // Also skip ids still used by reviews or staff of a deleted branch, so a new branch
+    // never inherits someone else's history
+    const taken = x => branches.some(b => b.id === x)
+        || (typeof surveySubmissions !== "undefined" && surveySubmissions.some(s => s.branchId === x))
+        || (typeof employees !== "undefined" && employees.some(e => e.branchId === x));
+    for (let n = 2; taken(id); n++) id = `${base}-${n}`;
     return id;
 }
 

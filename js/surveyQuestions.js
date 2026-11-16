@@ -282,7 +282,7 @@ async function saveRatingCategoryFromModal(e) {
     }
 }
 
-function handleRatingGroupAction(action, btn) {
+async function handleRatingGroupAction(action, btn) {
     const id = btn.dataset.id;
     if (action === "rating-title-edit") {
         editingRatingTitle = true;
@@ -316,7 +316,14 @@ function handleRatingGroupAction(action, btn) {
     if (action === "rating-cat-delete") {
         const c = activeRatingCfg().categories.find(x => x.id === id);
         if (!c || c.id === RATING_REQUIRED_ID) return;
-        if (!confirm(`Delete "${c.label}"?\nCustomers won't be asked this any more. Past ratings are kept.`)) return;
+        if (!(await confirmDialog({
+            tone: "danger",
+            title: `Delete "${c.label}"?`,
+            body: `<p>Customers won't be asked to rate <strong class="text-gray-900">${escapeHtml(c.label)}</strong> any more.</p>
+                   <p>Past ratings are kept and still show on the Reviews page.</p>`,
+            confirmLabel: "Delete category",
+            cancelLabel: "Keep"
+        }))) return;
         writeRatingCategories(activeRatingCfg().categories.filter(x => x.id !== id), `"${c.label}" deleted.`);
     }
 }
@@ -557,7 +564,16 @@ async function handleAddSurveyQuestion(e) {
 
 // Delete survey question
 async function deleteSurveyQuestion(questionId) {
-    if (!confirm("Are you sure you want to delete this question?")) return;
+    const q = (typeof surveyQuestions !== "undefined" ? surveyQuestions : []).find(x => x.id === questionId);
+    if (!(await confirmDialog({
+        tone: "danger",
+        title: "Delete this question?",
+        body: (q ? `<p class="font-semibold text-gray-900">"${escapeHtml(q.question)}"</p>` : "")
+            + `<p>Customers won't see it on the survey any more. Answers already given are kept in each review.</p>
+               <p class="text-[12.5px] text-gray-500">To only hide it for now, turn off its "Shown" switch instead.</p>`,
+        confirmLabel: "Delete question",
+        cancelLabel: "Keep"
+    }))) return;
 
     try {
         await db.collection("surveyQuestions").doc(questionId).delete();

@@ -184,10 +184,25 @@ async function sendStoreResetPassword(inv, btn) {
 
 async function revokeStoreAccount(inv, btn) {
     const state = inviteState(inv);
-    const msg = state === "Active"
-        ? `Revoke kiosk access for ${inv.email} (${inv.branchName || branchName(inv.branchId)})?\nThey won't be able to redeem vouchers any more. You can then invite someone else for this branch.`
-        : `Cancel the invite for ${inv.email}?\nThe link will stop working.`;
-    if (!confirm(msg)) return;
+    const branch = escapeHtml(inv.branchName || branchName(inv.branchId));
+    const email = `<strong class="text-gray-900 break-all">${escapeHtml(inv.email)}</strong>`;
+    const ok = await confirmDialog(state === "Active"
+        ? {
+            tone: "danger",
+            title: "Revoke kiosk access?",
+            body: `<p>${email} (${branch}) won't be able to sign in or redeem vouchers any more.</p>
+                   <p>You can then invite someone else for this branch.</p>`,
+            confirmLabel: "Revoke access",
+            cancelLabel: "Keep access"
+        }
+        : {
+            tone: "warning",
+            title: "Cancel this invite?",
+            body: `<p>The invite link sent to ${email} (${branch}) will stop working.</p>`,
+            confirmLabel: "Cancel invite",
+            cancelLabel: "Keep invite"
+        });
+    if (!ok) return;
     btn.disabled = true;
     try {
         const batch = db.batch();
@@ -206,7 +221,13 @@ async function revokeStoreAccount(inv, btn) {
 }
 
 async function deleteRevokedInvite(inv, btn) {
-    if (!confirm(`Remove ${inv.email} from this list?`)) return;
+    if (!(await confirmDialog({
+        tone: "danger",
+        title: "Remove from the list?",
+        body: `<p><strong class="text-gray-900 break-all">${escapeHtml(inv.email)}</strong> is already revoked. This only tidies up the list.</p>`,
+        confirmLabel: "Remove",
+        cancelLabel: "Keep"
+    }))) return;
     btn.disabled = true;
     try { await db.collection("storeInvites").doc(inv.id).delete(); }
     catch (err) { console.error(err); showToast("Couldn't remove it."); btn.disabled = false; }

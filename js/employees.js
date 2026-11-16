@@ -1,5 +1,54 @@
 // Employees array for real-time updates (shared by the dashboard and the survey page)
 let employees = [];
+let employeeSearch = "";            // dashboard Employees page: "Search employee" box
+let employeeUnassignedOnly = false; // dashboard Employees page: "Unassigned" chip
+
+// No branch, or a branch that no longer exists (deleted). Until branches have loaded,
+// only an empty branchId counts, so nobody flashes up as unassigned on page load.
+function isUnassigned(emp) {
+    if (!emp.branchId) return true;
+    const loaded = typeof branchesLoaded !== "undefined" && branchesLoaded;
+    return loaded && !branches.some(b => b.id === emp.branchId);
+}
+
+// The search box and chip only exist on the dashboard (the survey page loads this file too)
+document.addEventListener("DOMContentLoaded", () => {
+    const input = document.getElementById("employeeSearchInput");
+    if (input) {
+        input.addEventListener("input", () => {
+            employeeSearch = input.value;
+            renderEmployees();
+        });
+    }
+    const chip = document.getElementById("unassignedFilterBtn");
+    if (chip) {
+        chip.addEventListener("click", () => {
+            employeeUnassignedOnly = !employeeUnassignedOnly;
+            // Unassigned staff have no branch: show the Branch select as "All" so the bar isn't contradictory
+            if (employeeUnassignedOnly && typeof selectBranch === "function"
+                && typeof selectedBranchId !== "undefined" && selectedBranchId !== "All") {
+                selectBranch("All"); // re-renders the list too
+            } else {
+                renderEmployees();
+            }
+        });
+    }
+});
+
+// Chip label "Unassigned (N)" and on/off style (same look as the review star-filter chips)
+function updateUnassignedChip(count) {
+    const chip = document.getElementById("unassignedFilterBtn");
+    if (!chip) return;
+    chip.textContent = `Unassigned (${count})`;
+    chip.setAttribute("aria-pressed", String(employeeUnassignedOnly));
+    chip.classList.toggle("bg-tvRed", employeeUnassignedOnly);
+    chip.classList.toggle("border-tvRed", employeeUnassignedOnly);
+    chip.classList.toggle("text-white", employeeUnassignedOnly);
+    chip.classList.toggle("bg-white", !employeeUnassignedOnly);
+    chip.classList.toggle("border-gray-300", !employeeUnassignedOnly);
+    chip.classList.toggle("text-gray-600", !employeeUnassignedOnly);
+    chip.classList.toggle("hover:bg-gray-100", !employeeUnassignedOnly);
+}
 
 // Real-time listener for employees (employees are publicly readable, so no login needed)
 function subscribeToEmployees() {
@@ -40,48 +89,67 @@ function renderEmployees() {
     const emptyEl = document.getElementById("emptyEmployeesState");
     if (!listEl) return;
 
-    // Branch filter from the bar at the top of the page ("All" = every branch)
+    const unassigned = employees.filter(isUnassigned);
+    updateUnassignedChip(unassigned.length);
+
+    // "Unassigned" chip on: only staff without a branch (the Branch select is ignored, since
+    // they have none). Otherwise the Branch filter from the bar at the top ("All" = every branch).
     const filterId = typeof selectedBranchId !== "undefined" ? selectedBranchId : "All";
-    const filtering = filterId && filterId !== "All";
-    const shown = (filtering ? employees.filter(emp => emp.branchId === filterId) : employees.slice())
+    const filtering = !employeeUnassignedOnly && filterId && filterId !== "All";
+    const inBranch = employeeUnassignedOnly ? unassigned
+        : filtering ? employees.filter(emp => emp.branchId === filterId) : employees.slice();
+    // "Search employee" box (dashboard toolbar): name, position or branch name
+    const q = employeeSearch.trim().toLowerCase();
+    const shown = (q ? inBranch.filter(emp =>
+            [emp.name, emp.position, isUnassigned(emp) ? "Unassigned" : branchName(emp.branchId)]
+                .some(v => String(v || "").toLowerCase().includes(q)))
+        : inBranch)
         .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
 
     const summaryEl = document.getElementById("employeesSummary");
     if (summaryEl) {
-        summaryEl.textContent = filtering
-            ? `${shown.length} of ${employees.length} employee${employees.length === 1 ? "" : "s"} · ${branchName(filterId)}`
+        const matching = q ? ` · matching "${employeeSearch.trim()}"` : "";
+        const where = filtering ? ` · ${branchName(filterId)}` : " across all branches";
+        summaryEl.textContent = employeeUnassignedOnly
+            ? `${shown.length} unassigned employee${shown.length === 1 ? "" : "s"}${matching}`
+            : filtering || q
+            ? `${shown.length} of ${employees.length} employee${employees.length === 1 ? "" : "s"}${where}${matching}`
             : `${employees.length} employee${employees.length === 1 ? "" : "s"} across all branches`;
     }
 
     if (shown.length === 0) {
         listEl.innerHTML = "";
         document.getElementById("emptyEmployeesTitle").textContent =
-            filtering ? `No employees at ${branchName(filterId)}` : "No employees found";
+            q ? `No employee matches "${employeeSearch.trim()}"`
+            : employeeUnassignedOnly ? "No unassigned employees"
+            : filtering ? `No employees at ${branchName(filterId)}` : "No employees found";
         document.getElementById("emptyEmployeesText").textContent =
-            filtering ? "Pick another branch above, or add an employee to this branch." : "Add your first employee to get started.";
+            q ? "Check the spelling, or clear the search box."
+            : employeeUnassignedOnly ? "Everyone has a branch."
+            : filtering ? "Pick another branch above, or add an employee to this branch." : "Add your first employee to get started.";
         emptyEl.classList.remove("hidden");
         return;
     }
 
     emptyEl.classList.add("hidden");
 
-    const branchNameFor = id => (id ? branchName(id) : "Unassigned");
-
     listEl.innerHTML = shown.map(emp => {
         const name = emp.name || "Unnamed";
+        const noBranch = isUnassigned(emp); // grey tag: needs a branch (click Edit)
         return `
-            <article class="bg-white border border-gray-200 rounded-[10px] px-6 py-4 flex items-center justify-between gap-4 hover:border-gray-300 transition-colors">
+            <article class="min-w-0 bg-white border border-gray-200 rounded-[10px] px-5 py-4 flex flex-col gap-3 hover:border-gray-300 transition-colors">
                 <div class="flex items-center gap-4 min-w-0">
                     ${employeeAvatarHtml(emp, "w-11 h-11")}
                     <div class="min-w-0">
                         <h3 class="text-[14px] font-bold text-gray-900 truncate">${escapeHtml(name)}</h3>
-                        <p class="text-[12px] text-gray-500">${escapeHtml(emp.position || "Staff Member")}</p>
+                        <p class="text-[12px] text-gray-500 truncate">${escapeHtml(emp.position || "Staff Member")}</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-2 shrink-0">
-                    <span class="hidden sm:inline-block px-2.5 py-1 rounded-full bg-gray-100 text-[11px] font-semibold text-tvRed">
-                        ${escapeHtml(branchNameFor(emp.branchId))}
+                <div class="flex items-center gap-2 pt-3 border-t border-gray-100 mt-auto">
+                    <span class="min-w-0 truncate px-2.5 py-1 rounded-full bg-gray-100 text-[11px] font-semibold ${noBranch ? "text-gray-500 border border-dashed border-gray-300" : "text-tvRed"}">
+                        ${escapeHtml(noBranch ? "Unassigned" : branchName(emp.branchId))}
                     </span>
+                    <span class="flex-1"></span>
                     <button type="button" data-action="edit-employee" data-id="${escapeHtml(emp.id)}" class="px-3 py-1.5 rounded-[6px] border border-gray-200 text-gray-700 hover:bg-gray-100 text-[12px] font-semibold transition-colors">
                         Edit
                     </button>
@@ -211,6 +279,41 @@ async function handleAddEmployee(e) {
         return;
     }
 
+    // Reviews store the staff member's NAME, and the Staff tab groups ratings by it. So two people
+    // with the same name would share one rating history, and a rename starts a new one.
+    const sameName = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+    if (employees.some(emp => emp.id !== editId && sameName(emp.name, name))) {
+        showToast(`Another employee is already called "${name}". Add a last name or initial so their ratings stay separate.`);
+        return;
+    }
+    const current = editId ? employees.find(emp => emp.id === editId) : null;
+    if (current && !sameName(current.name, name)) {
+        const oldName = String(current.name || "").trim();
+        const reviewCount = (typeof surveySubmissions !== "undefined" ? surveySubmissions : [])
+            .filter(s => sameName(s.staffMember, oldName)).length;
+        if (reviewCount) {
+            const reviews = `${reviewCount} review${reviewCount === 1 ? "" : "s"}`;
+            const chip = (text, cls) => `<span class="inline-flex max-w-full truncate px-2.5 py-1 rounded-full text-[12.5px] font-semibold ${cls}">${escapeHtml(text)}</span>`;
+            const ok = typeof confirmDialog === "function"
+                ? await confirmDialog({
+                    tone: "warning",
+                    title: `Rename ${oldName}?`,
+                    body: `
+                        <div class="flex items-center gap-2 flex-wrap">
+                            ${chip(oldName, "bg-gray-100 text-gray-700")}
+                            <span class="text-gray-400" aria-hidden="true">→</span>
+                            ${chip(name, "bg-red-50 text-tvRed")}
+                        </div>
+                        <p><strong class="text-gray-900">${escapeHtml(oldName)}</strong> has <strong class="text-gray-900">${reviews}</strong> under this name.
+                           Those stay under "${escapeHtml(oldName)}", and new reviews start a separate rating history for "${escapeHtml(name)}".</p>`,
+                    confirmLabel: "Rename anyway",
+                    cancelLabel: "Keep old name"
+                })
+                : confirm(`${oldName} has ${reviews} under this name. Renaming starts a new rating history for "${name}". Continue?`);
+            if (!ok) return; // nothing saved
+        }
+    }
+
     saveBtn.disabled = true;
     try {
         const data = { name, position, branchId };
@@ -253,7 +356,16 @@ async function handleAddEmployee(e) {
 
 // Delete employee
 async function deleteEmployee(employeeId) {
-    if (!confirm("Are you sure you want to delete this employee?")) return;
+    const emp = employees.find(x => x.id === employeeId);
+    const empName = (emp && emp.name) || "this employee";
+    if (!(await confirmDialog({
+        tone: "danger",
+        title: `Delete ${empName}?`,
+        body: `<p>Their profile and photo disappear from the dashboard and from the survey's staff list.</p>
+               <p>Past reviews that mention <strong class="text-gray-900">${escapeHtml(empName)}</strong> are kept.</p>`,
+        confirmLabel: "Delete employee",
+        cancelLabel: "Keep"
+    }))) return;
 
     try {
         await db.collection("employees").doc(employeeId).delete();
