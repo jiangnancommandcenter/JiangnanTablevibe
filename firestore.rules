@@ -34,7 +34,10 @@ service cloud.firestore {
                                'dish', 'source', 'survey', 'createdAt'])
         && d.keys().hasAll(['branchId', 'ratings', 'createdAt'])
         && d.branchId is string && d.branchId.size() > 0 && d.branchId.size() <= 50
-        && d.ratings is map
+        // must be a real, active branch (stops reviews for made-up branches)
+        && exists(/databases/$(database)/documents/branches/$(d.branchId))
+        && get(/databases/$(database)/documents/branches/$(d.branchId)).data.status == 'active'
+        && d.ratings is map && d.ratings.size() <= 20
         && d.ratings.overall is int && d.ratings.overall >= 1 && d.ratings.overall <= 5
         && optionalString(d, 'branchName', 100)
         && optionalString(d, 'customerName', 100)
@@ -42,8 +45,10 @@ service cloud.firestore {
         && optionalString(d, 'staffMember', 100)
         && optionalString(d, 'managerVisit', 200)
         && optionalString(d, 'dish', 200)
-        && (!('answers' in d) || d.answers is map)
-        && (!('atmosphereOpen' in d) || d.atmosphereOpen is map)
+        // size caps: a public write must not be able to store a 1 MB document
+        && (!('answers' in d) || (d.answers is map && d.answers.size() <= 50))
+        && (!('atmosphereOpen' in d) || (d.atmosphereOpen is map && d.atmosphereOpen.size() <= 5
+              && optionalString(d.atmosphereOpen, 'comment', 2000)))
         && (!('source' in d) || isAdmin())   // only staff can record manual reviews
         && (!('survey' in d) || d.survey in ['dinein', 'delivery'])   // which survey it came from
         && d.createdAt == request.time;
@@ -162,7 +167,9 @@ service cloud.firestore {
         && optionalString(request.resource.data, 'resolutionNote', 1000)
         && (!('flagged' in request.resource.data) || request.resource.data.flagged is bool)
         && (!('resolved' in request.resource.data) || request.resource.data.resolved is bool)
-        && (!('resolvedBy' in request.resource.data) || request.resource.data.resolvedBy is string);
+        // whoever resolves it is recorded truthfully
+        && (!('resolvedBy' in request.resource.data.diff(resource.data).affectedKeys())
+              || request.resource.data.resolvedBy == request.auth.uid);
       allow delete: if false;
     }
 
@@ -228,7 +235,13 @@ service cloud.firestore {
                                                              'expiresAt', 'status', 'createdAt'])
         && request.resource.data.email == emailId
         && emailId.size() <= 254
-        && emailId.matches('^[a-z0-9._%+-]+@[a-z0-9.-]+[.][a-z]{2,}$')   // lowercase, email-shaped
+        // lowercase, email-shaped, canonical (see canonicalEmail() in js/firebase-config.js):
+        // no "+tag" and no dots in a Gmail name, so aliases of one inbox can't each get a voucher
+        && emailId.matches('^[a-z0-9._%-]+@[a-z0-9.-]+[.][a-z]{2,}$')
+        && !emailId.matches('^[^@]*[.][^@]*@gmail[.]com$')
+        && !emailId.matches('^.*@googlemail[.]com$')
+        // one voucher per survey: written in the same batch as surveyVouchers/{surveyId}
+        && getAfter(/databases/$(database)/documents/surveyVouchers/$(request.resource.data.surveyId)).data.email == emailId
         && request.resource.data.code is string && request.resource.data.code.size() == 8
         && matchesVoucherOffer(request.resource.data, voucherCfg())
         && request.resource.data.status == 'active'
@@ -254,6 +267,20 @@ service cloud.firestore {
         && request.resource.data.redeemedBy == request.auth.uid
         && request.resource.data.redeemedBranchId is string;
       allow delete: if false;
+    }
+
+    // ============================================
+    // SURVEY VOUCHERS - marks a survey as "voucher already claimed" (doc id = survey id).
+    // Create-only, so one survey can never be used to claim vouchers for several emails.
+    // ============================================
+    match /surveyVouchers/{surveyId} {
+      allow read: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['email', 'createdAt'])
+        && request.resource.data.email is string
+        && request.resource.data.createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.email))
+        && getAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.email)).data.surveyId == surveyId;
+      allow update, delete: if false;
     }
 
     // ============================================

@@ -413,12 +413,8 @@ function renderStaffTab() {
     return card("Staff ratings", `Average service rating per staff member · best first · ${periodLabel()} · click for latest comments`, body);
 }
 
-function renderQuestionsTab() {
-    const subs = reviewsInScope();
-    const qs = typeof surveyQuestions !== "undefined" ? surveyQuestions : [];
-    if (!qs.length) return card("Your questions", "", emptyNote("You haven't added questions of your own yet (Survey Questions page)."));
-
-    const cards = qs.map(q => {
+// One question's results. subs = submissions of the same survey type as the question.
+function questionCard(q, subs) {
         const answers = subs.map(s => ({ s, a: s.answers && s.answers[q.id] }))
             .filter(x => typeof x.a === "string" && x.a.trim());
         const sub = `${answers.length} answer${answers.length === 1 ? "" : "s"}${q.visible === false ? " · hidden from the survey" : ""}`;
@@ -444,6 +440,35 @@ function renderQuestionsTab() {
                ${answers.length > 20 ? `<p class="text-[11.5px] text-gray-500 mt-2">Showing the latest 20. All of them are in the Suggestions tab.</p>` : ""}`
             : emptyNote("No answers yet.");
         return card(q.question, `Open-ended · ${sub}`, body);
+}
+
+// Questions follow the Type filter: Dine-in or Delivery shows only that survey's questions;
+// "All" shows both surveys as two groups. Each question only counts answers from its own survey.
+function renderQuestionsTab() {
+    const subs = reviewsInScope();
+    const qs = typeof surveyQuestions !== "undefined" ? surveyQuestions : [];
+    const groups = [
+        { type: "dinein", title: "🍲 Dine-in survey", name: "dine-in" },
+        { type: "delivery", title: "🛵 Delivery survey", name: "delivery" }
+    ].filter(g => selectedSurveyFilter === "All" || selectedSurveyFilter === g.type)
+     .map(g => ({ ...g, questions: qs.filter(q => surveyTypeOf(q) === g.type) }));
+
+    const shown = groups.filter(g => g.questions.length);
+    if (!shown.length) {
+        const msg = selectedSurveyFilter === "delivery" ? "No delivery questions yet. Add them on the Survey Questions page (Delivery survey)."
+            : selectedSurveyFilter === "dinein" ? "No dine-in questions yet. Add them on the Survey Questions page (Dine-in survey)."
+            : "You haven't added questions of your own yet (Survey Questions page).";
+        return card("Your questions", "", emptyNote(msg));
+    }
+
+    const grid = cards => `<div class="grid grid-cols-1 lg:grid-cols-2 gap-[18px] items-start">${cards.join("")}</div>`;
+    const sections = shown.map(g => {
+        const typeSubs = subs.filter(s => surveyTypeOf(s) === g.type);
+        const cards = g.questions.map(q => questionCard(q, typeSubs));
+        // Headings only when both surveys are on screen
+        return selectedSurveyFilter === "All"
+            ? `<div><h2 class="text-[13px] font-bold text-gray-700 uppercase tracking-[0.04em] mb-3">${escapeHtml(g.title)}</h2>${grid(cards)}</div>`
+            : grid(cards);
     });
 
     // Answers to questions that were deleted since
@@ -456,7 +481,7 @@ function renderQuestionsTab() {
             <p class="text-[12px] text-gray-500 mt-2">They're kept in each review. Open-ended ones also appear in the Suggestions tab.</p>
         </details>` : "";
 
-    return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-[18px] items-start">${cards.join("")}</div>${older ? `<div class="mt-[18px]">${older}</div>` : ""}`;
+    return `<div class="space-y-[26px]">${sections.join("")}</div>${older ? `<div class="mt-[18px]">${older}</div>` : ""}`;
 }
 
 // Full response block for one review in the All reviews tab

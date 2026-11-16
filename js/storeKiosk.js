@@ -350,11 +350,16 @@ async function findVoucher() {
     } else {
         const email = $("emailInput").value.trim().toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast("Type the customer's full email address."); return; }
-        ref = db.collection("vouchers").doc(email);
+        ref = db.collection("vouchers").doc(canonicalEmail(email));
+        ref.rawEmail = email;
     }
     setFinding(true);
     try {
-        const snap = await ref.get();
+        let snap = await ref.get();
+        // Vouchers made before canonical ids were keyed on the address exactly as typed
+        if (mode !== "code" && !snap.exists && ref.rawEmail !== ref.id) {
+            snap = await db.collection("vouchers").doc(ref.rawEmail).get();
+        }
         const doc = mode === "code" ? snap.docs[0] : (snap.exists ? snap : null);
         result = doc ? { voucher: { id: doc.id, ...doc.data() }, confirming: false, redeemed: false, busy: false } : { notFound: true };
     } catch (err) {

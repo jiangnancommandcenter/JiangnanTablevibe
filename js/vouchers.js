@@ -126,7 +126,11 @@ async function findVoucher(rawInput) {
     const input = String(rawInput || "").trim();
     try {
         if (input.includes("@")) {
-            const snap = await db.collection("vouchers").doc(input.toLowerCase()).get();
+            let snap = await db.collection("vouchers").doc(canonicalEmail(input)).get();
+            // Vouchers made before canonical ids were keyed on the address exactly as typed
+            if (!snap.exists && canonicalEmail(input) !== input.toLowerCase()) {
+                snap = await db.collection("vouchers").doc(input.toLowerCase()).get();
+            }
             lookedUpVouchers = snap.exists ? [{ id: snap.id, ...snap.data() }] : [];
         } else {
             const code = input.toUpperCase().replace(/[^A-Z0-9]/g, "");

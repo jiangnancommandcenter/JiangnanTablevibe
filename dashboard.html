@@ -66,18 +66,20 @@
     }, true);
   </script>
   <!-- ?v= forces browsers to fetch the current files; bump it whenever these change -->
-  <script src="js/firebase-config.js?v=20261116g"></script>
+  <script src="js/firebase-config.js?v=20261116k"></script>
   <script src="js/branches.js?v=20261114k"></script>
   <script src="js/employees.js?v=20261114k"></script>
   <script src="js/ratingConfig.js?v=20261116d"></script>
   <script src="js/surveyQuestions.js?v=20261116d"></script>
   <script src="js/dashboard.js?v=20261116d"></script>
   <script src="js/voucherConfig.js?v=20261116a"></script>
-  <script src="js/vouchers.js?v=20261116a"></script>
-  <script src="js/reviewsInsights.js?v=20261116d"></script>
+  <script src="js/vouchers.js?v=20261116b"></script>
+  <script src="js/reviewsInsights.js?v=20261116e"></script>
+  <script src="js/reviewsExport.js?v=20261116a"></script>
   <script src="js/storeAccounts.js?v=20261116g"></script>
 </head>
 <body class="bg-tvBg text-gray-900 font-sans antialiased min-h-screen flex flex-col selection:bg-tvRed selection:text-white">
+  <script>activateAppCheck();</script>
 
   <!-- Sign-in Overlay (dashboard data requires an authenticated admin) -->
   <div id="loginOverlay" class="fixed inset-0 bg-tvBg z-[60] flex items-center justify-center p-4">
@@ -374,7 +376,8 @@
           </select>
         </div>
 
-        <div id="allReviewsFeed" class="space-y-[14px]"></div>
+        <!-- 1 card per row on smaller screens, 2 side by side from 1280px wide -->
+        <div id="allReviewsFeed" class="grid grid-cols-1 xl:grid-cols-2 gap-[14px]"></div>
 
         <div id="emptyReviewsState" class="hidden bg-white border border-gray-200 rounded-[10px] p-10 text-center">
           <h3 class="text-[15px] font-bold text-gray-900">No reviews found matching your criteria</h3>
@@ -855,7 +858,8 @@
       reviews: {
         title: "Reviews",
         subtitle: "Customer feedback — resolve suggestions or flag submissions",
-        action: null, // reviews come only from customers (no manual "+ Add Review")
+        // reviews come only from customers (no manual "+ Add Review"); the button downloads them instead
+        action: "Export CSV", onAction: () => exportReviews(),
         filters: true, search: true
       },
       branches: {
@@ -1408,12 +1412,9 @@
     };
 
     // ---------- Reviews feed ----------
-    function renderReviewsFeed() {
-      const feedEl = document.getElementById("allReviewsFeed");
-      const emptyEl = document.getElementById("emptyReviewsState");
-      if (!feedEl) return;
-
-      let allReviews = reviewsInScope() // branch + period (js/reviewsInsights.js)
+    // Branch + type + period scope, newest first, as feed items (also used by js/reviewsExport.js)
+    function feedReviewItems() {
+      return reviewsInScope() // branch + period (js/reviewsInsights.js)
         .slice()
         .sort((a, b) => submissionTime(b) - submissionTime(a))
         .map(s => {
@@ -1436,15 +1437,11 @@
             flagged: !!s.flagged
           };
         });
+    }
 
-      // Rebuild staff dropdown from the current branch scope
-      const staffSelect = document.getElementById("staffFilterSelect");
-      const uniqueStaff = [...new Set(allReviews.map(r => r.staffName).filter(s => s && s !== "Unassigned"))].sort();
-      staffSelect.innerHTML = '<option value="All">All Staff</option>' +
-        uniqueStaff.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
-      if (!uniqueStaff.includes(selectedStaffFilter)) selectedStaffFilter = "All";
-      staffSelect.value = selectedStaffFilter;
-
+    // The All reviews filters (staff, stars, sentiment, resolved, search) applied to feed items
+    function filteredFeedReviews(items) {
+      let allReviews = items;
       if (selectedStaffFilter !== "All") {
         allReviews = allReviews.filter(r => r.staffName === selectedStaffFilter);
       }
@@ -1470,6 +1467,25 @@
           r.staffName.toLowerCase().includes(q)
         );
       }
+      return allReviews;
+    }
+
+    function renderReviewsFeed() {
+      const feedEl = document.getElementById("allReviewsFeed");
+      const emptyEl = document.getElementById("emptyReviewsState");
+      if (!feedEl) return;
+
+      let allReviews = feedReviewItems();
+
+      // Rebuild staff dropdown from the current branch scope
+      const staffSelect = document.getElementById("staffFilterSelect");
+      const uniqueStaff = [...new Set(allReviews.map(r => r.staffName).filter(s => s && s !== "Unassigned"))].sort();
+      staffSelect.innerHTML = '<option value="All">All Staff</option>' +
+        uniqueStaff.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+      if (!uniqueStaff.includes(selectedStaffFilter)) selectedStaffFilter = "All";
+      staffSelect.value = selectedStaffFilter;
+
+      allReviews = filteredFeedReviews(allReviews);
 
       if (allReviews.length === 0) {
         feedEl.innerHTML = "";
@@ -1486,7 +1502,7 @@
       };
 
       feedEl.innerHTML = allReviews.map(rev => `
-        <article class="bg-white border ${rev.flagged ? "border-tvRed" : "border-gray-200"} rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+        <article class="flex flex-col min-w-0 bg-white border ${rev.flagged ? "border-tvRed" : "border-gray-200"} rounded-[10px] px-6 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
           <div class="flex items-start justify-between gap-3">
             <div class="flex items-center gap-3 min-w-0">
               <div class="w-9 h-9 rounded-full bg-tvDark text-white text-sm font-bold flex items-center justify-center shrink-0">
@@ -1528,7 +1544,9 @@
               <strong class="text-gray-900">Earlier note:</strong> ${escapeHtml(rev.reply)}
             </div>` : ""}
 
-          <div class="flex flex-wrap items-center justify-between gap-2 mt-4 pt-3 border-t border-gray-100">
+          <!-- spacer + mt-auto: the buttons sit at the bottom so they line up across a row -->
+          <div class="h-4 shrink-0"></div>
+          <div class="flex flex-wrap items-center justify-between gap-2 mt-auto pt-3 border-t border-gray-100">
             <span class="text-[12px] text-gray-500">${rev.dish ? `Specialty: <span class="font-medium text-gray-700">${escapeHtml(rev.dish)}</span>` : ""}</span>
             <div class="flex items-center gap-2">
               ${rev.resolved ? `
@@ -1717,16 +1735,26 @@
       setCaptchaToken(null);
     }
 
-    // Called by the reCAPTCHA script once it has loaded (it is injected below, after this is defined)
-    window.onRecaptchaLoad = () => {
-      captchaWidgetId = grecaptcha.render("recaptchaBox", {
+    // Called by the reCAPTCHA script once it has loaded (it is injected below, after this is defined).
+    // App Check's Fraud Defense script shares the same window.grecaptcha object, so the v2 "onload"
+    // can fire a moment before grecaptcha.render exists: wait for it (up to ~10 s) instead of crashing.
+    function renderCaptcha(tries = 0) {
+      if (captchaWidgetId !== null) return;
+      const g = window.grecaptcha;
+      if (!g || typeof g.render !== "function") {
+        if (tries < 100) setTimeout(() => renderCaptcha(tries + 1), 100);
+        else console.error("reCAPTCHA checkbox didn't load.");
+        return;
+      }
+      captchaWidgetId = g.render("recaptchaBox", {
         sitekey: RECAPTCHA_V2_SITE_KEY,
         size: window.innerWidth < 360 ? "compact" : "normal",
         callback: token => setCaptchaToken(token),
         "expired-callback": () => setCaptchaToken(null),
         "error-callback": () => setCaptchaToken(null)
       });
-    };
+    }
+    window.onRecaptchaLoad = () => renderCaptcha();
 
     if (captchaEnabled) {
       const s = document.createElement("script");

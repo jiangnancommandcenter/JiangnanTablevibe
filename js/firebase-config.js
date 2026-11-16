@@ -1,9 +1,10 @@
 // ---- reCAPTCHA site keys (create them at https://www.google.com/recaptcha/admin) ----
 // v2 "I'm not a robot" Checkbox key: shown on the dashboard login.
-const RECAPTCHA_V2_SITE_KEY = "";
-// v3 key: used invisibly by Firebase App Check on both pages.
-// Its SECRET key goes in Firebase Console → App Check, never in this file.
-const RECAPTCHA_V3_SITE_KEY = "";
+const RECAPTCHA_V2_SITE_KEY = "6LfbwSIuAAAAADmtj2C28Asy0_S3eN9sAMobIFH-";
+// App Check key: a Google Cloud "Fraud Defense" (reCAPTCHA Enterprise) website key, used invisibly
+// by Firebase App Check on every page. Create it in Google Cloud Console (project tablevibe-5cd4e)
+// → Security → Fraud Defense / reCAPTCHA. It has no secret key: just register its ID in Firebase App Check.
+const RECAPTCHA_V3_SITE_KEY = "6LfPvCIuAAAAAGkXH_quu24Qccq5GxTZuCZQaaGz";
 
 // ---- EmailJS (emails the 5% voucher code after the survey) — https://www.emailjs.com ----
 // Leave any of these empty to switch the voucher off (the email box is then hidden).
@@ -52,18 +53,47 @@ firebase.initializeApp(firebaseConfig);
 // Firebase App Check: proves requests come from these pages, not a script calling Firebase directly.
 // Must be activated before any Firestore/Auth call. Enforce it in the console only after
 // App Check → Metrics shows both pages sending verified requests.
-if (typeof firebase.appCheck === "function" && RECAPTCHA_V3_SITE_KEY) {
-    if (["localhost", "127.0.0.1"].includes(location.hostname)) {
-        // Local testing: Firebase prints a debug token in the console.
-        // Register it in Firebase Console → App Check → Manage debug tokens.
-        self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+// reCAPTCHA adds a hidden element to <body>, which doesn't exist yet while this file runs in <head>.
+// So each page calls activateAppCheck() in a tiny script right after its <body> tag
+// (before any Firestore call); DOMContentLoaded is only a fallback.
+let appCheckActivated = false;
+function activateAppCheck() {
+    if (appCheckActivated || !document.body) return;
+    appCheckActivated = true;
+    if (typeof firebase.appCheck !== "function" || !RECAPTCHA_V3_SITE_KEY) {
+        if (!RECAPTCHA_V3_SITE_KEY) console.warn("App Check is off: set RECAPTCHA_V3_SITE_KEY in js/firebase-config.js.");
+        return;
     }
-    firebase.appCheck().activate(new firebase.appCheck.ReCaptchaV3Provider(RECAPTCHA_V3_SITE_KEY), true);
-} else if (!RECAPTCHA_V3_SITE_KEY) {
-    console.warn("App Check is off: set RECAPTCHA_V3_SITE_KEY in js/firebase-config.js.");
+    try {
+        if (["localhost", "127.0.0.1"].includes(location.hostname)) {
+            // Local testing: Firebase prints a debug token in the console.
+            // Register it in Firebase Console → App Check → Manage debug tokens.
+            self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+        }
+        // Fraud Defense (reCAPTCHA Enterprise) key. reCAPTCHA Classic is deprecated in App Check.
+        firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(RECAPTCHA_V3_SITE_KEY), true);
+    } catch (err) {
+        console.error("App Check could not start:", err); // the site keeps working while not enforced
+    }
 }
+if (document.body) activateAppCheck();
+else document.addEventListener("DOMContentLoaded", activateAppCheck);
 
 const db = firebase.firestore();
+
+// One mailbox = one voucher: "Ana.Cruz+promo@gmail.com" and "anacruz@gmail.com" reach the same inbox,
+// so both become "anacruz@gmail.com". Strips +tags everywhere, and dots for Gmail. Used as the voucher
+// doc id; the Firestore rules reject ids that still contain a "+" or a dotted Gmail name.
+function canonicalEmail(raw) {
+    const email = String(raw || "").trim().toLowerCase();
+    const at = email.lastIndexOf("@");
+    if (at < 1) return email;
+    let local = email.slice(0, at).split("+")[0];
+    let domain = email.slice(at + 1);
+    if (domain === "googlemail.com") domain = "gmail.com";
+    if (domain === "gmail.com") local = local.replace(/\./g, "");
+    return local + "@" + domain;
+}
 
 // Escape any user- or database-supplied value before it goes into innerHTML.
 // Survey submissions are publicly writable, so every rendered field must pass through this.
