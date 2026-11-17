@@ -305,13 +305,14 @@
     function storageSet(k, v) { if (PREVIEW) return; try { localStorage.setItem(k, v); } catch {} }
     function storageDel(k) { try { localStorage.removeItem(k); } catch {} }
 
-    // ---------- "Already submitted" lock (refresh vs. QR scan) ----------
-    // After submitting, "done=<surveyId>" is added to the address bar. A refresh (or the back
-    // button) keeps that marker, so the same thank-you screen is shown instead of a new survey.
-    // Scanning the QR code again opens the clean link (no marker) → a fresh survey.
-    // The real voucher protection is in the Firestore rules (one voucher per survey).
+    // ---------- "Already submitted" lock: 12 hours per device ----------
+    // After submitting, this browser shows the thank-you screen for 12 hours on every visit:
+    // refresh, a saved/copied link or a new QR scan (they all open the same URL).
+    // It lives in browser storage, so another browser / private mode / cleared data gets around it;
+    // the real voucher protection is in the Firestore rules (one voucher per email every 12 hours).
     const DONE_KEY = IS_DELIVERY ? "dpSurveyDone:delivery" : "dpSurveyDone"; // separate lock per survey
-    const DONE_PARAM = "done";
+    const DONE_PARAM = "done";             // "done=<surveyId>" in the address bar after submitting
+    const DONE_LOCK_HOURS = 12;            // the device can submit again after this
     const VOUCHER_WINDOW_MIN = 14;         // rules accept a voucher up to 15 min after the survey
 
     // Puts "done=<surveyId>" in the address bar without reloading (keeps branch / type)
@@ -326,27 +327,26 @@
     function saveDoneState() {
       if (PREVIEW) return;
       const stage = voucherCard.stage === "sending" ? "form" : voucherCard.stage;
+      const surveyAt = (lastSummary && lastSummary.at) || Date.now();
       storageSet(DONE_KEY, JSON.stringify({
-        at: Date.now(),
-        surveyAt: (lastSummary && lastSummary.at) || Date.now(),
+        at: surveyAt, // the 12-hour lock counts from the submission, not from later voucher updates
+        surveyAt,
         summary: lastSummary,
         card: { stage, email: voucherCard.email || "" }
       }));
     }
 
-    // Returns true when this page is a refresh of a finished survey (then the thank-you screen is shown).
-    // A clean link (QR scan) has no "done" marker → the old state is cleared and a new survey starts.
+    // Returns true when this device submitted in the last 12 hours (then the thank-you screen is
+    // shown, whatever link was opened). After 12 hours the old state is cleared → a new survey.
     function restoreDoneState() {
       const doneId = new URLSearchParams(location.search).get(DONE_PARAM) || "";
-      if (!doneId) {
-        storageDel(DONE_KEY);
-        return false;
-      }
       let saved = null;
       try { saved = JSON.parse(storageGet(DONE_KEY) || "null"); } catch { saved = null; }
-      if (!saved || !saved.summary || saved.summary.surveyId !== doneId) {
-        // Marked as done but this device has no matching record (e.g. storage cleared):
-        // still a thank-you screen, never the form again.
+      const lockMs = DONE_LOCK_HOURS * 3600e3;
+      if (!saved || !saved.at || Date.now() - saved.at >= lockMs) {
+        storageDel(DONE_KEY);
+        if (!doneId) return false; // lock over (or never submitted) → new survey
+        // "done" link but no record on this device (e.g. storage cleared): thank-you, never the form
         lastSummary = {};
         voucherCard = { stage: "closed", email: "", error: "" };
         finished = true;
@@ -691,16 +691,37 @@
         </div>`;
     }
 
-    // Optional invitation to also post on the branch's Google listing. Shown to everyone,
-    // whatever their rating (Google's policy forbids only inviting happy customers).
+    // Optional invitation to also post on the branch's Google listing (thank-you screen and
+    // voucher email). Only shown when the average of all stars is above 3; 3 or below → hidden.
+    // Note: Google's review policy forbids inviting only happy customers ("review gating").
     // The link is set per branch in the dashboard: Branches → Edit → Google review link.
+    const GOOGLE_INVITE_MIN_AVG = 3; // the average must be ABOVE this
+    function googleInviteAllowed() {
+      const avg = lastSummary && lastSummary.avgRating;
+      return typeof avg === "number" && avg > GOOGLE_INVITE_MIN_AVG;
+    }
+
     function branchGoogleReviewUrl(branchId) {
       const b = branches.find(x => x.id === branchId);
       const url = b && typeof b.googleReviewUrl === "string" ? b.googleReviewUrl.trim() : "";
       return /^https:\/\/\S+$/.test(url) ? url : "";
     }
 
+    // Google section of the voucher email (template: {{{google_review_html}}}).
+    // Empty when the invitation isn't allowed or the branch has no link → nothing shows in the email.
+    function googleReviewEmailHtml(branchId) {
+      const url = googleInviteAllowed() ? branchGoogleReviewUrl(branchId) : "";
+      if (!url) return "";
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">`
+        + `<tr><td style="padding:24px 16px 0;"><div style="border-top:1px solid #cccccc;height:1px;line-height:1px;font-size:1px;">&nbsp;</div></td></tr>`
+        + `<tr><td align="center" style="padding:20px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:#222222;">Can you do us a favor and share your feedback on Google too? It only takes 2 seconds.</td></tr>`
+        + `<tr><td align="center" style="padding:16px 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>`
+        + `<td align="center" bgcolor="#e8636f" style="border-radius:4px;"><a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;padding:11px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#ffffff;text-decoration:none;border-radius:4px;">Leave Google Review</a></td>`
+        + `</tr></table></td></tr></table>`;
+    }
+
     function renderGoogleReviewCard() {
+      if (!googleInviteAllowed()) return "";
       const url = branchGoogleReviewUrl(lastSummary && lastSummary.branchId);
       if (!url) return "";
       return `
@@ -837,7 +858,8 @@
           min_spend_line: minSpendLine(cfg.minSpend, cfg.appliesTo),
           conditions_html: voucherConditionsHtml(conditions), // template: {{{conditions_html}}}
           // Set per branch in the dashboard: Branches → Edit → Google review link
-          google_review_url: branchGoogleReviewUrl(branchId),
+          google_review_url: googleInviteAllowed() ? branchGoogleReviewUrl(branchId) : "", // kept for older templates
+          google_review_html: googleReviewEmailHtml(branchId), // template: {{{google_review_html}}} (empty for avg ≤ 3)
           valid_from: validFrom,
           valid_until: validUntil,
           expires: validUntil, // kept for older templates
@@ -1039,9 +1061,14 @@
       activeRatings().categories.forEach(c => { ratings[c.id] = ratingValues[c.id]; });
       if (selectedStaffMember && staffRating > 0) ratings.staffService = staffRating;
 
+      // Average of every star given (decides whether the Google review invitation is shown)
+      const allStars = Object.values(ratings).filter(v => typeof v === "number" && v >= 1);
+      if (!IS_DELIVERY && atmosphereOpenStar >= 1) allStars.push(atmosphereOpenStar);
+      const avgRating = allStars.length ? allStars.reduce((a, b) => a + b, 0) / allStars.length : null;
+
       if (PREVIEW) {
         // Show what customers see after submitting, without saving anything
-        lastSummary = { branch: branchObj ? branchObj.name : "", branchId: selectedBranchId, surveyId: "preview", rating: ratings.overall, staff: selectedStaffMember, at: Date.now() };
+        lastSummary = { branch: branchObj ? branchObj.name : "", branchId: selectedBranchId, surveyId: "preview", rating: ratings.overall, avgRating, staff: selectedStaffMember, at: Date.now() };
         voucherCard = { stage: "form", email: "", error: "" };
         finished = true;
         transitionTo(currentKey);
@@ -1072,6 +1099,7 @@
           branchId: selectedBranchId,
           surveyId: surveyRef.id, // the voucher must point at a real, submitted survey
           rating: ratings.overall,
+          avgRating, // average of all stars: Google invitation only above 3
           staff: selectedStaffMember,
           name: customerName.trim(), // greeting in the voucher email
           at: Date.now()

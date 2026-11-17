@@ -6,11 +6,14 @@
     To Email:  {{to_email}}
   Variables sent by review.html:
     {{customer_name}} {{discount}} {{applies_to}} {{min_spend_line}} {{valid_from}} {{valid_until}} {{redeem_url}}
-    {{google_review_url}} {{{conditions_html}}}
+    {{google_review_url}} {{{conditions_html}}} {{{google_review_html}}}
   The offer comes from the dashboard's Vouchers → "Voucher settings" card.
   The conditions list too (Voucher settings → Conditions). {{{conditions_html}}} uses THREE braces so
   EmailJS inserts the line breaks as HTML; review.html already escapes the text.
   {{google_review_url}} is the branch's link from the dashboard's Branches → Edit → Google review link.
+  {{{google_review_html}}} (THREE braces) is the whole Google section (divider, text, button),
+  built by review.html. It is sent empty when the customer's average rating is 3 or below
+  (or the branch has no Google link), so the section simply doesn't appear.
   The voucher code is NOT printed here on purpose: it only appears after tapping
   "Redeem Gift" (voucher.html reads it from {{redeem_url}}).
 -->
@@ -62,25 +65,12 @@
           </td>
         </tr>
         <tr>
-          <td style="padding:24px 40px 0;">
-            <div style="border-top:1px solid #cccccc;height:1px;line-height:1px;font-size:1px;">&nbsp;</div>
+          <td align="center" style="padding:0 24px;">
+            {{{google_review_html}}}
           </td>
         </tr>
         <tr>
-          <td align="center" style="padding:20px 24px 0;font-size:15px;line-height:22px;">
-            Can you do us a favor and share your feedback on Google too? It only takes 2 seconds.
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding:16px 24px 32px;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td align="center" bgcolor="#e8636f" style="border-radius:4px;">
-                  <a href="{{google_review_url}}" target="_blank" style="display:inline-block;padding:11px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#ffffff;text-decoration:none;border-radius:4px;">Leave Google Review</a>
-                </td>
-              </tr>
-            </table>
-          </td>
+          <td style="padding:0 0 32px;"></td>
         </tr>
       </table>
     </td>
