@@ -274,6 +274,7 @@
     let surveyAnswers = {};
     let loadedQuestions = [];
     let customerName = "";
+    let customerEmail = ""; // optional; used for the voucher + low-rating alert only, never saved with the survey
     let customerComment = "";
     let selectedStaffMember = "";
     let staffRating = 0;
@@ -368,8 +369,11 @@
     // stage: "none" (no email given) | "sending" | "sent" | "duplicate" | "failed"
     let voucherCard = { stage: "none", email: "" };
     let voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
+    customerEmail = voucherEmailInput; // prefill the survey's email box with the last one used on this phone
 
     const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/; // same shape the Firestore rules accept
+    const cleanEmail = () => customerEmail.trim().toLowerCase();
+    const emailLooksOk = () => cleanEmail() === "" || EMAIL_RE.test(cleanEmail());
 
     // 8 characters, no look-alikes (0/O, 1/I/L)
     function makeVoucherCode() {
@@ -416,7 +420,7 @@
       if (key === "ratings") return activeRatings().categories.every(c => ratingValues[c.id] >= 1 && ratingValues[c.id] <= 5);
       // Every question must be answered; written answers just can't be blank (the name stays optional)
       if (key === "atmo-open") return atmosphereOpenStar >= 1 && atmosphereOpenText.trim() !== "";
-      if (key === "comment") return customerComment.trim() !== "";
+      if (key === "comment") return customerComment.trim() !== "" && emailLooksOk(); // email optional, but valid if given
       if (key === "staff-rate") return staffRating >= 1;
       if (key.startsWith("q:")) {
         const q = loadedQuestions.find(x => "q:" + x.id === key);
@@ -613,6 +617,14 @@
                 <label for="nameInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Your name <span class="normal-case font-normal text-gray-400">(optional)</span></label>
                 <input id="nameInput" data-field="customerName" type="text" maxlength="100" placeholder="e.g., Bea Alonzo" value="${escapeHtml(customerName)}" class="${INPUT}">
               </div>
+              <div>
+                <label for="emailInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Email address <span class="normal-case font-normal text-gray-400">(recommended)</span></label>
+                <input id="emailInput" data-field="customerEmail" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="you@example.com" value="${escapeHtml(customerEmail)}" class="${INPUT}">
+                <p data-email-error class="${emailLooksOk() ? "hidden" : ""} text-[12px] font-medium text-tvRed mt-1.5">Please check your email address.</p>
+                ${voucherConfigLoaded && voucherConfig.enabled
+                  ? `<p class="text-[12px] text-gray-500 mt-1.5">We'll email your ${voucherConfig.discountPercent}% voucher here.</p>`
+                  : ""}
+              </div>
             </div>`,
           footer: nextButton("Next", { disabled: !canAdvance(key) })
         });
@@ -660,7 +672,8 @@
     }
 
     // Thank-you screen: no ratings summary, no "submit another review".
-    // Before the email is sent it shows the voucher box; afterwards only the thank-you message.
+    // The voucher goes automatically to the email typed in the survey; this screen shows the result.
+    // The voucher box only appears if creating the voucher failed (retry with the same email).
     function renderDone() {
       const c = voucherCard;
       const email = `<strong class="text-gray-900 break-all">${escapeHtml(c.email)}</strong>`;
@@ -990,8 +1003,14 @@
       if (f === "atmosphereOpenText") atmosphereOpenText = e.target.value;
       if (f === "customerComment") customerComment = e.target.value;
       if (f === "customerName") customerName = e.target.value;
+      if (f === "customerEmail") {
+        customerEmail = e.target.value;
+        // the "check your email" hint appears only when the box is left with an invalid address
+        const errEl = stepHost.querySelector("[data-email-error]");
+        if (errEl && emailLooksOk()) errEl.classList.add("hidden");
+      }
       if (f === "answer") surveyAnswers[e.target.dataset.qid] = e.target.value;
-      if (f === "atmosphereOpenText" || f === "customerComment" || f === "answer") syncNextButton();
+      if (f === "atmosphereOpenText" || f === "customerComment" || f === "answer" || f === "customerEmail") syncNextButton();
       if (f === "voucherEmail") {
         voucherEmailInput = e.target.value;
         if (voucherCard.error) { // clear the old message without re-rendering (keeps the cursor in the box)
@@ -1000,6 +1019,13 @@
           if (errEl) errEl.remove();
         }
       }
+    });
+
+    // Leaving the survey email box with an invalid address → show the hint
+    stepHost.addEventListener("focusout", e => {
+      if (!e.target.dataset || e.target.dataset.field !== "customerEmail") return;
+      const errEl = stepHost.querySelector("[data-email-error]");
+      if (errEl) errEl.classList.toggle("hidden", emailLooksOk());
     });
 
     // Enter in the voucher email box = Send
@@ -1069,11 +1095,12 @@
       if (PREVIEW) {
         // Show what customers see after submitting, without saving anything
         lastSummary = { branch: branchObj ? branchObj.name : "", branchId: selectedBranchId, surveyId: "preview", rating: ratings.overall, avgRating, staff: selectedStaffMember, at: Date.now() };
-        voucherCard = { stage: "form", email: "", error: "" };
+        voucherCard = { stage: "skipped", email: "" }; // preview never sends a voucher
         finished = true;
         transitionTo(currentKey);
         return;
       }
+      const email = cleanEmail(); // optional; never saved with the survey
 
       isSubmitting = true;
       const submitBtn = stepHost.querySelector('[data-action="submit"]');
@@ -1095,7 +1122,7 @@
         }
         const surveyRef = await db.collection("surveys").add(submission);
         // Low rating → email management the full survey (in the background; never blocks the customer)
-        if (avgRating !== null && avgRating <= SURVEY_ALERT_MAX_AVG) sendSurveyAlert(submission, surveyRef.id, avgRating);
+        if (avgRating !== null && avgRating <= SURVEY_ALERT_MAX_AVG) sendSurveyAlert(submission, surveyRef.id, avgRating, email);
         lastSummary = {
           branch: branchObj ? branchObj.name : selectedBranchId,
           branchId: selectedBranchId,
@@ -1106,13 +1133,19 @@
           name: customerName.trim(), // greeting in the voucher email
           at: Date.now()
         };
-        // Review is saved. The thank-you screen now offers the (optional) voucher.
-        voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
-        voucherCard = { stage: "form", email: "", error: "" };
+        // Review is saved. With an email (and the offer on), the voucher is sent automatically;
+        // the thank-you screen shows "Sending…" → sent / 12-hour lock / failed.
+        voucherEmailInput = email;
+        const sendVoucher = !!email && VOUCHER_ENABLED && voucherConfigLoaded && voucherConfig.enabled;
+        voucherCard = sendVoucher ? { stage: "sending", email } : { stage: "skipped", email: "" };
         finished = true;
         saveDoneState(); // a refresh now shows this thank-you screen, not a new survey
-        markUrlDone(surveyRef.id); // only a fresh QR scan (clean link) opens a new survey
+        markUrlDone(surveyRef.id);
         transitionTo(currentKey);
+        if (sendVoucher) {
+          storageSet(VOUCHER_EMAIL_KEY, email); // prefill next time
+          issueVoucher(email, surveyRef.id, lastSummary.branchId, lastSummary.branch, lastSummary.name);
+        }
       } catch (error) {
         console.error("Error saving survey:", error);
         showToast("Failed to save survey. Please try again.");
@@ -1140,7 +1173,7 @@
     }
 
     // The whole survey as an HTML table (all text escaped) for {{{survey_html}}}
-    function surveyAlertHtml(s) {
+    function surveyAlertHtml(s, email) {
       const rows = [];
       const section = title => rows.push(
         `<tr><td colspan="2" style="padding:16px 0 6px;font-size:13px;font-weight:bold;color:#e8636f;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #eeeeee;">${escapeHtml(title)}</td></tr>`);
@@ -1161,6 +1194,7 @@
       section("Review");
       row("Comment", s.comment || "-");
       row("Name", s.customerName || "Anonymous");
+      row("Email", email);
       if (loadedQuestions.length) {
         section("Other questions");
         loadedQuestions.forEach(q => row(q.question || "", String((s.answers || {})[q.id] || "-")));
@@ -1168,16 +1202,19 @@
       return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">${rows.join("")}</table>`;
     }
 
-    function sendSurveyAlert(submission, surveyId, avgRating) {
+    // Called right after a low-rated survey is saved: sent immediately, with the survey's email
+    function sendSurveyAlert(submission, surveyId, avgRating, email) {
       if (!surveyAlertEnabled()) return;
+      const shownEmail = email || "Not provided";
       emailjs.send(alertServiceId(), EMAILJS_SURVEY_ALERT_TEMPLATE_ID, {
         branch_name: submission.branchName || "",
         survey_type: IS_DELIVERY ? "Delivery" : "Dine-in",
         customer_name: submission.customerName || "Anonymous",
+        customer_email: shownEmail,
         avg_rating: avgRating.toFixed(1),
         submitted_at: new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }),
         survey_id: surveyId,
-        survey_html: surveyAlertHtml(submission)
+        survey_html: surveyAlertHtml(submission, shownEmail)
       }, { publicKey: alertPublicKey() })
         .catch(err => console.warn("Low-rating alert email failed:", err && (err.text || err.message || err)));
     }
@@ -1192,6 +1229,7 @@
       staffRating = 0;
       voucherCard = { stage: "none", email: "" };
       voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
+      customerEmail = voucherEmailInput;
       if (!skipBranchStep) selectedBranchId = "";
       await loadSurveyQuestions();
       finished = false;
