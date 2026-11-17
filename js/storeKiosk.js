@@ -340,27 +340,38 @@ document.addEventListener("keydown", e => {
     clearResult(true);
 });
 
+// One email can have several vouchers (one per survey): show an active one first,
+// otherwise any (so staff see "already redeemed" / "expired"). One doc per query (store rules).
+async function findVoucherByEmail(rawEmail) {
+    const vouchersRef = db.collection("vouchers");
+    // Older vouchers were stored with the address exactly as typed (lowercased)
+    const emails = [...new Set([canonicalEmail(rawEmail), rawEmail])];
+    for (const email of emails) {
+        const active = await vouchersRef.where("email", "==", email).where("status", "==", "active").limit(1).get();
+        if (!active.empty) return active.docs[0];
+    }
+    for (const email of emails) {
+        const any = await vouchersRef.where("email", "==", email).limit(1).get();
+        if (!any.empty) return any.docs[0];
+    }
+    return null;
+}
+
 async function findVoucher() {
     if (!store) return;
-    let ref;
+    let code = "", email = "";
     if (mode === "code") {
-        const code = $("codeInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        code = $("codeInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
         if (code.length !== 8) { showToast("Type all 8 characters of the voucher code."); return; }
-        ref = db.collection("vouchers").where("code", "==", code).limit(1);
     } else {
-        const email = $("emailInput").value.trim().toLowerCase();
+        email = $("emailInput").value.trim().toLowerCase();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast("Type the customer's full email address."); return; }
-        ref = db.collection("vouchers").doc(canonicalEmail(email));
-        ref.rawEmail = email;
     }
     setFinding(true);
     try {
-        let snap = await ref.get();
-        // Vouchers made before canonical ids were keyed on the address exactly as typed
-        if (mode !== "code" && !snap.exists && ref.rawEmail !== ref.id) {
-            snap = await db.collection("vouchers").doc(ref.rawEmail).get();
-        }
-        const doc = mode === "code" ? snap.docs[0] : (snap.exists ? snap : null);
+        const doc = mode === "code"
+            ? (await db.collection("vouchers").where("code", "==", code).limit(1).get()).docs[0]
+            : await findVoucherByEmail(email);
         result = doc ? { voucher: { id: doc.id, ...doc.data() }, confirming: false, redeemed: false, busy: false } : { notFound: true };
     } catch (err) {
         console.error("Voucher lookup failed:", err);

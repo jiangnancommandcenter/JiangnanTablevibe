@@ -1,4 +1,4 @@
-// Vouchers (thank-you vouchers, one per email, emailed after the survey) — dashboard only.
+// Vouchers (thank-you vouchers, one per survey, emailed after the survey) — dashboard only.
 // Customers create them from the survey page; staff look them up by code or email and redeem once,
 // after the customer shows the voucher email on their phone (customers never log in).
 // The offer (discount, applies to, min spend, validity, on/off) is edited in the "Voucher settings"
@@ -121,17 +121,20 @@ function renderVouchers() {
     listEl.innerHTML = vouchers.map(voucherCardHtml).join("");
 }
 
-// Find by voucher code (8 characters) or by the customer's email (voucher doc id)
+// Find by voucher code (8 characters) or by the customer's email (all their vouchers)
 async function findVoucher(rawInput) {
     const input = String(rawInput || "").trim();
     try {
         if (input.includes("@")) {
-            let snap = await db.collection("vouchers").doc(canonicalEmail(input)).get();
-            // Vouchers made before canonical ids were keyed on the address exactly as typed
-            if (!snap.exists && canonicalEmail(input) !== input.toLowerCase()) {
-                snap = await db.collection("vouchers").doc(input.toLowerCase()).get();
-            }
-            lookedUpVouchers = snap.exists ? [{ id: snap.id, ...snap.data() }] : [];
+            // One email can have several vouchers (one per survey). Older vouchers were
+            // stored with the address exactly as typed (lowercased), so search both forms.
+            const emails = [...new Set([canonicalEmail(input), input.toLowerCase()])];
+            const snaps = await Promise.all(emails.map(e => db.collection("vouchers").where("email", "==", e).get()));
+            const byId = new Map();
+            snaps.forEach(s => s.docs.forEach(doc => byId.set(doc.id, { id: doc.id, ...doc.data() })));
+            lookedUpVouchers = [...byId.values()].sort((a, b) =>
+                ((b.createdAt && b.createdAt.toMillis && b.createdAt.toMillis()) || 0) -
+                ((a.createdAt && a.createdAt.toMillis && a.createdAt.toMillis()) || 0));
         } else {
             const code = input.toUpperCase().replace(/[^A-Z0-9]/g, "");
             if (code.length !== 8) {

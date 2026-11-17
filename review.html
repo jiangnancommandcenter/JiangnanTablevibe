@@ -253,7 +253,7 @@
         throw Object.assign(new Error("Preview mode: nothing is saved."), { code: "preview-blocked" });
       };
       const realCollection = db.collection.bind(db);
-      db.collection = name => (name === "surveys" || name === "vouchers")
+      db.collection = name => (name === "surveys" || name === "vouchers" || name === "voucherEmailLocks")
         ? { add: blockedWrite, doc: () => ({ set: blockedWrite, update: blockedWrite }) }
         : realCollection(name);
       const labelsBtn = document.querySelector('[onclick="openAdminModal()"]');
@@ -287,7 +287,7 @@
 
     // ---------- Voucher: emailed on Submit (no customer login) ----------
     // The code is created here and emailed with EmailJS. Anti-spam lives in the Firestore
-    // rules (one voucher per email, must come from a fresh real survey) and at the counter
+    // rules (one voucher per survey, must come from a fresh real survey) and at the counter
     // (staff ask to see the voucher email before redeeming).
     // The offer itself (discount, applies to, minimum spend, validity, on/off) comes from
     // js/voucherConfig.js and is edited on the dashboard's Vouchers page.
@@ -305,13 +305,23 @@
     function storageSet(k, v) { if (PREVIEW) return; try { localStorage.setItem(k, v); } catch {} }
     function storageDel(k) { try { localStorage.removeItem(k); } catch {} }
 
-    // ---------- "Already submitted" lock (this device) ----------
-    // After submitting, a refresh shows the same thank-you screen instead of a new survey.
-    // This is a deterrent on the customer's own phone; the real voucher protection is in
-    // the Firestore rules (one voucher per email).
+    // ---------- "Already submitted" lock (refresh vs. QR scan) ----------
+    // After submitting, "done=<surveyId>" is added to the address bar. A refresh (or the back
+    // button) keeps that marker, so the same thank-you screen is shown instead of a new survey.
+    // Scanning the QR code again opens the clean link (no marker) → a fresh survey.
+    // The real voucher protection is in the Firestore rules (one voucher per survey).
     const DONE_KEY = IS_DELIVERY ? "dpSurveyDone:delivery" : "dpSurveyDone"; // separate lock per survey
-    const DONE_LOCK_HOURS = 24;            // the device can submit again after this
+    const DONE_PARAM = "done";
     const VOUCHER_WINDOW_MIN = 14;         // rules accept a voucher up to 15 min after the survey
+
+    // Puts "done=<surveyId>" in the address bar without reloading (keeps branch / type)
+    function markUrlDone(surveyId) {
+      try {
+        const url = new URL(location.href);
+        url.searchParams.set(DONE_PARAM, surveyId);
+        history.replaceState(null, "", url.toString());
+      } catch {}
+    }
 
     function saveDoneState() {
       if (PREVIEW) return;
@@ -324,13 +334,23 @@
       }));
     }
 
-    // Returns true when this device finished a survey recently (then the thank-you screen is shown)
+    // Returns true when this page is a refresh of a finished survey (then the thank-you screen is shown).
+    // A clean link (QR scan) has no "done" marker → the old state is cleared and a new survey starts.
     function restoreDoneState() {
-      let saved = null;
-      try { saved = JSON.parse(storageGet(DONE_KEY) || "null"); } catch { saved = null; }
-      if (!saved || !saved.at || Date.now() - saved.at > DONE_LOCK_HOURS * 3600e3) {
+      const doneId = new URLSearchParams(location.search).get(DONE_PARAM) || "";
+      if (!doneId) {
         storageDel(DONE_KEY);
         return false;
+      }
+      let saved = null;
+      try { saved = JSON.parse(storageGet(DONE_KEY) || "null"); } catch { saved = null; }
+      if (!saved || !saved.summary || saved.summary.surveyId !== doneId) {
+        // Marked as done but this device has no matching record (e.g. storage cleared):
+        // still a thank-you screen, never the form again.
+        lastSummary = {};
+        voucherCard = { stage: "closed", email: "", error: "" };
+        finished = true;
+        return true;
       }
       lastSummary = saved.summary || {};
       let stage = (saved.card && saved.card.stage) || "form";
@@ -647,7 +667,8 @@
       const afterEmail = {
         sending: `Sending your ${voucherConfig.discountPercent}% voucher to ${email}…`,
         sent: `Your ${voucherConfig.discountPercent}% voucher has been sent to ${email}. Show that email to staff on your next visit. Check your spam folder if you don't see it.`,
-        duplicate: `${email} has already received a voucher (one per email). Please check your inbox for the earlier email.`,
+        duplicate: `A voucher was already sent for this survey. Please check your inbox for the earlier email.`,
+        cooldown: `${email} already received a voucher in the last 12 hours, so no new voucher was sent. Your review is saved. You can get another voucher 12 hours after your last one.`,
         failed: `Your voucher is saved, but the email didn't send. Show this screen to staff on your next visit. They can find it by your email: ${email}.`,
         closed: `Your review has been sent to Jiang Nan Hotpot management.`,
         skipped: `Your review has been sent to Jiang Nan Hotpot management.`
@@ -699,7 +720,7 @@
       if (!voucherConfigLoaded || !voucherConfig.enabled) return "";
       const body = {
         form: `<p class="text-[15px] font-bold text-gray-900">Get ${voucherConfig.discountPercent}% off ${escapeHtml(voucherConfig.appliesTo)} on your next visit</p>
-               <p class="text-[13px] text-gray-600 mt-1">Enter your email to get your voucher. One voucher per email.</p>
+               <p class="text-[13px] text-gray-600 mt-1">Enter your email to get your voucher. One voucher per email every 12 hours.</p>
                <div class="flex flex-col sm:flex-row gap-2 mt-3">
                  <input id="voucherEmailInput" type="email" data-field="voucherEmail" value="${escapeHtml(voucherEmailInput)}" placeholder="you@example.com" autocomplete="email" maxlength="254" class="${INPUT} flex-1 min-w-0">
                  <button type="button" data-action="send-voucher" class="px-4 py-2.5 rounded-[6px] bg-tvRed hover:bg-tvRedHover text-white font-semibold text-[13px] transition-colors shadow-sm shrink-0">Send my voucher</button>
@@ -740,7 +761,7 @@
       issueVoucher(email, lastSummary.surveyId, lastSummary.branchId, lastSummary.branch, lastSummary.name);
     }
 
-    // Create the voucher (one per email, enforced by the Firestore rules) and email the code
+    // Create the voucher (one per survey, enforced by the Firestore rules) and email the code
     async function issueVoucher(email, surveyId, branchId, branchNameText, customerNameText) {
       voucherCard = { stage: "sending", email };
       render();
@@ -761,13 +782,15 @@
       }
       const now = new Date();
       const expires = voucherExpiryFrom(now, cfg);
-      // Doc id = canonical address (aliases of one inbox share it); the email itself goes to what was typed
-      const voucherId = canonicalEmail(email);
+      // Doc id = the survey id: one voucher per survey (create-only in the rules), so the same
+      // email can get a new voucher with each new survey. The stored email is the canonical
+      // address (for lookups); the email itself goes to what was typed.
       try {
+        const voucherEmail = canonicalEmail(email);
         const batch = db.batch();
-        batch.set(db.collection("vouchers").doc(voucherId), {
+        batch.set(db.collection("vouchers").doc(surveyId), {
           code,
-          email: voucherId,
+          email: voucherEmail,
           surveyId,
           branchId,
           discountPercent: cfg.discountPercent,
@@ -777,17 +800,18 @@
           status: "active",
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
-        // Marks this survey as used: one survey can only ever claim one voucher
-        batch.set(db.collection("surveyVouchers").doc(surveyId), {
-          email: voucherId,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        // 12-hour lock per email: the rules refuse this if the email got a voucher < 12 h ago
+        batch.set(db.collection("voucherEmailLocks").doc(voucherEmail), {
+          surveyId,
+          lastSentAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         await batch.commit();
       } catch (err) {
         console.warn("Voucher not created:", err.code, err.message);
         if (err.code === "permission-denied") {
-          // the expected refusal: this email (or this survey) already has a voucher (doc exists → not a create)
-          voucherCard = { stage: "duplicate", email };
+          // the expected refusal: this email got a voucher in the last 12 hours
+          // (a survey can't send twice from this page, so that's the reason)
+          voucherCard = { stage: "cooldown", email };
         } else {
           voucherCard = { stage: "form", email, error: "The voucher couldn't be created right now. Please try again." }; // nothing was created
         }
@@ -1057,6 +1081,7 @@
         voucherCard = { stage: "form", email: "", error: "" };
         finished = true;
         saveDoneState(); // a refresh now shows this thank-you screen, not a new survey
+        markUrlDone(surveyRef.id); // only a fresh QR scan (clean link) opens a new survey
         transitionTo(currentKey);
       } catch (error) {
         console.error("Error saving survey:", error);

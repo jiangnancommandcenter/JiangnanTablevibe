@@ -220,13 +220,15 @@ service cloud.firestore {
     // VOUCHERS - voucher emailed after the survey (no customer login)
     // The deal (discount, applies to, min spend, expiry) is copied into each voucher from
     // surveyConfig/voucher, so changing the settings never changes vouchers already sent.
-    // Doc id = the customer's lowercased email. Rules only allow *creating* a new doc,
-    // so a second voucher for the same email is a write to an existing doc → rejected.
+    // Doc id = the survey id (older vouchers used the customer's email as the id).
+    // Rules only allow *creating* a new doc, so a second voucher for the same survey is a
+    // write to an existing doc → rejected. The same email can get a new voucher with a new
+    // survey (a fresh QR scan), but only once every 12 hours (see voucherEmailLocks below).
     // Each voucher must point at a real survey submitted in the last 15 minutes.
     // Staff confirm ownership at the counter by asking to see the voucher email.
     // ============================================
-    match /vouchers/{emailId} {
-      // Stores: one voucher at a time (by email = doc id, or by code with limit(1)),
+    match /vouchers/{voucherId} {
+      // Stores: one voucher at a time (by email or by code with limit(1)),
       // plus the vouchers redeemed at their own branch ("Today's redemptions"). No bulk listing.
       allow get: if isAdmin() || isStore();
       allow list: if isAdmin()
@@ -235,15 +237,18 @@ service cloud.firestore {
       allow create: if request.resource.data.keys().hasOnly(['code', 'email', 'surveyId', 'branchId',
                                                              'discountPercent', 'appliesTo', 'minSpend',
                                                              'expiresAt', 'status', 'createdAt'])
-        && request.resource.data.email == emailId
-        && emailId.size() <= 254
-        // lowercase, email-shaped, canonical (see canonicalEmail() in js/firebase-config.js):
-        // no "+tag" and no dots in a Gmail name, so aliases of one inbox can't each get a voucher
-        && emailId.matches('^[a-z0-9._%-]+@[a-z0-9.-]+[.][a-z]{2,}$')
-        && !emailId.matches('^[^@]*[.][^@]*@gmail[.]com$')
-        && !emailId.matches('^.*@googlemail[.]com$')
-        // one voucher per survey: written in the same batch as surveyVouchers/{surveyId}
-        && getAfter(/databases/$(database)/documents/surveyVouchers/$(request.resource.data.surveyId)).data.email == emailId
+        // one voucher per survey: the doc id is the survey id
+        && request.resource.data.surveyId == voucherId
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 254
+        // lowercase, email-shaped, canonical (see canonicalEmail() in js/firebase-config.js)
+        && request.resource.data.email.matches('^[a-z0-9._%-]+@[a-z0-9.-]+[.][a-z]{2,}$')
+        && !request.resource.data.email.matches('^[^@]*[.][^@]*@gmail[.]com$')
+        && !request.resource.data.email.matches('^.*@googlemail[.]com$')
+        // 12-hour lock per email: voucherEmailLocks/{email} must be (re)written in the same batch,
+        // and its rules refuse it if the email got a voucher less than 12 hours ago
+        && getAfter(/databases/$(database)/documents/voucherEmailLocks/$(request.resource.data.email)).data.surveyId == voucherId
+        && getAfter(/databases/$(database)/documents/voucherEmailLocks/$(request.resource.data.email)).data.lastSentAt == request.time
         && request.resource.data.code is string && request.resource.data.code.size() == 8
         && matchesVoucherOffer(request.resource.data, voucherCfg())
         && request.resource.data.status == 'active'
@@ -272,17 +277,31 @@ service cloud.firestore {
     }
 
     // ============================================
-    // SURVEY VOUCHERS - marks a survey as "voucher already claimed" (doc id = survey id).
-    // Create-only, so one survey can never be used to claim vouchers for several emails.
+    // VOUCHER EMAIL LOCKS - one voucher per email every 12 hours (doc id = canonical email).
+    // Written in the same batch as the voucher it belongs to. Updating it (= a new voucher for
+    // the same email) is only allowed once the last one is at least 12 hours old.
+    // ============================================
+    match /voucherEmailLocks/{emailId} {
+      function validLock() {
+        return request.resource.data.keys().hasOnly(['surveyId', 'lastSentAt'])
+          && request.resource.data.lastSentAt == request.time
+          && request.resource.data.surveyId is string
+          && getAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.surveyId)).data.email == emailId;
+      }
+      allow read: if isAdmin();
+      allow create: if validLock();
+      allow update: if validLock()
+        && resource.data.lastSentAt <= request.time - duration.value(12, 'h'); // the 12-hour lock
+      allow delete: if false;
+    }
+
+    // ============================================
+    // SURVEY VOUCHERS - no longer written: vouchers now use the survey id as their doc id,
+    // which already limits each survey to one voucher. Old docs stay readable for admins.
     // ============================================
     match /surveyVouchers/{surveyId} {
       allow read: if isAdmin();
-      allow create: if request.resource.data.keys().hasOnly(['email', 'createdAt'])
-        && request.resource.data.email is string
-        && request.resource.data.createdAt == request.time
-        && existsAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.email))
-        && getAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.email)).data.surveyId == surveyId;
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     // ============================================
