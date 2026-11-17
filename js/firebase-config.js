@@ -66,8 +66,22 @@ function activateAppCheck() {
     }
     try {
         if (["localhost", "127.0.0.1"].includes(location.hostname)) {
-            // Local testing: Firebase prints a debug token in the console.
-            // Register it in Firebase Console → App Check → Manage debug tokens.
+            // Local testing (Live Server). An unregistered debug token makes App Check fail with 403,
+            // which takes Firestore offline, so App Check is skipped locally unless you opt in.
+            // Opt in once per browser with ?appcheckdebug=1 (off again with ?appcheckdebug=0), then register
+            // the token Firebase prints in the console: Firebase Console → App Check → Manage debug tokens.
+            // Needed only after App Check enforcement is turned on.
+            let debugOn = false;
+            try {
+                const flag = new URLSearchParams(location.search).get("appcheckdebug");
+                if (flag === "1") localStorage.setItem("appcheckDebug", "1");
+                if (flag === "0") localStorage.removeItem("appcheckDebug");
+                debugOn = localStorage.getItem("appcheckDebug") === "1";
+            } catch (e) { /* storage blocked: stay off */ }
+            if (!debugOn) {
+                console.info("App Check skipped on localhost. Add ?appcheckdebug=1 to the URL to test it with a debug token.");
+                return;
+            }
             self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
         }
         // Fraud Defense (reCAPTCHA Enterprise) key. reCAPTCHA Classic is deprecated in App Check.
