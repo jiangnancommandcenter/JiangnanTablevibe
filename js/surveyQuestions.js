@@ -60,17 +60,17 @@ const builtInsFor = survey => (survey === "delivery" ? DELIVERY_BUILT_IN_QUESTIO
 const BUILT_IN_QUESTIONS = [
     { key: "branch", question: "Which branch did you visit today?", kind: "Branch picker", note: "Skipped when the customer scans a branch QR code." },
     { key: "ratings", group: true }, // star-rating categories — rendered by ratingGroupCardHtml(), editable
-    { key: "atmo-open", question: "What did you like about the atmosphere?", kind: "Stars + text · optional" },
-    { key: "comment", question: "Share your detailed feedback", kind: "Review + name · optional" },
+    { key: "atmo-open", question: "What did you like about the atmosphere?", kind: "Stars + text · required" },
+    { key: "comment", question: "Share your detailed feedback", kind: "Review (required) + name (optional)" },
     { key: "staff", question: "Who assisted your table?", kind: "Staff picker", note: "Lists the employees of the chosen branch." },
-    { key: "staff-rate", question: "How would you rate <staff member>'s service?", kind: "5-star rating · optional", note: "Only asked when a staff member was picked." }
+    { key: "staff-rate", question: "How would you rate <staff member>'s service?", kind: "5-star rating · required", note: "Only asked when a staff member was picked." }
 ];
 
 // Delivery survey (review.html?type=delivery): no atmosphere or staff questions
 const DELIVERY_BUILT_IN_QUESTIONS = [
     { key: "branch", question: "Which branch did your order come from?", kind: "Branch picker", note: "Skipped when the customer scans the branch's delivery QR code." },
     { key: "ratings", group: true },
-    { key: "comment", question: "Share your detailed feedback", kind: "Review + name · optional" }
+    { key: "comment", question: "Share your detailed feedback", kind: "Review (required) + name (optional)" }
 ];
 
 // Recommended delivery questions, added with one click and then fully editable
@@ -363,7 +363,7 @@ function renderSurveyQuestions() {
         <div class="bg-white border-2 border-dashed border-tvRed/50 rounded-[10px] px-6 py-4">
             <p class="text-[14px] font-bold text-gray-900">Start with our recommended delivery questions</p>
             <ul class="text-[12.5px] text-gray-600 mt-1.5 list-disc pl-5 space-y-0.5">
-                ${DELIVERY_SEED_QUESTIONS.map(q => `<li>${escapeHtml(q.question)} <span class="text-gray-400">(${q.type === "open_ended" ? "open-ended, optional" : "multiple choice"})</span></li>`).join("")}
+                ${DELIVERY_SEED_QUESTIONS.map(q => `<li>${escapeHtml(q.question)} <span class="text-gray-400">(${q.type === "open_ended" ? "open-ended, required" : "multiple choice"})</span></li>`).join("")}
             </ul>
             <p class="text-[12px] text-gray-500 mt-1.5">You can edit, reorder, hide or delete them afterwards.</p>
             <div class="flex items-center gap-3 mt-3">

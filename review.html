@@ -394,11 +394,23 @@
     function canAdvance(key) {
       if (key === "branch") return activeBranches().some(b => b.id === selectedBranchId);
       if (key === "ratings") return activeRatings().categories.every(c => ratingValues[c.id] >= 1 && ratingValues[c.id] <= 5);
+      // Every question must be answered; written answers just can't be blank (the name stays optional)
+      if (key === "atmo-open") return atmosphereOpenStar >= 1 && atmosphereOpenText.trim() !== "";
+      if (key === "comment") return customerComment.trim() !== "";
+      if (key === "staff-rate") return staffRating >= 1;
       if (key.startsWith("q:")) {
         const q = loadedQuestions.find(x => "q:" + x.id === key);
-        return !q || q.type !== "multiple_choice" || !!surveyAnswers[q.id];
+        if (!q) return true;
+        return q.type === "multiple_choice" ? !!surveyAnswers[q.id] : String(surveyAnswers[q.id] || "").trim() !== "";
       }
+      // "staff": picking someone or "I don't remember" are both answers
       return true;
+    }
+
+    // Text steps: enable Next/Submit as soon as there's an answer, without re-rendering (keeps the cursor)
+    function syncNextButton() {
+      const btn = stepHost.querySelector('[data-action="next"], [data-action="submit"]');
+      if (btn) btn.disabled = !canAdvance(currentKey);
     }
 
     // ---------- Navigation ----------
@@ -476,12 +488,6 @@
         ${footer ? `<div class="mt-7 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3">${footer}</div>` : ""}`;
     }
 
-    function optionalSkip(label = "Skip") {
-      const action = renderingLast ? "submit" : "next";
-      if (renderingLast) label = "Skip & submit";
-      return `<button type="button" data-action="${action}" class="text-[13px] font-medium text-gray-500 hover:text-gray-900 transition-colors py-2">${label}</button>`;
-    }
-
     function renderStep(key) {
       // 1) Branch
       if (key === "branch") {
@@ -535,15 +541,15 @@
         });
       }
 
-      // 3) Atmosphere open-ended (optional)
+      // 3) Atmosphere open-ended (stars + text, both required)
       if (key === "atmo-open") {
         return shell({
           title: "What did you like about the atmosphere?",
-          hint: "Optional — rate it and tell us in your own words.",
+          hint: "Rate it and tell us in your own words.",
           body: `
             <div class="mb-5">${stars(atmosphereOpenStar, "atmoOpen", "w-8 h-8")}</div>
             <textarea data-field="atmosphereOpenText" rows="4" maxlength="1000" placeholder="Tell us what you liked about the atmosphere..." class="${INPUT}">${escapeHtml(atmosphereOpenText)}</textarea>`,
-          footer: optionalSkip() + nextButton()
+          footer: nextButton("Next", { disabled: !canAdvance(key) })
         });
       }
 
@@ -566,9 +572,9 @@
         }
         return shell({
           title: q.question,
-          hint: "Optional.",
+          hint: "Type your answer to continue.",
           body: `<textarea data-field="answer" data-qid="${escapeHtml(q.id)}" rows="5" maxlength="1000" placeholder="Type your answer here..." class="${INPUT}">${escapeHtml(surveyAnswers[q.id] || "")}</textarea>`,
-          footer: optionalSkip() + nextButton()
+          footer: nextButton("Next", { disabled: !canAdvance(key) })
         });
       }
 
@@ -588,7 +594,7 @@
                 <input id="nameInput" data-field="customerName" type="text" maxlength="100" placeholder="e.g., Bea Alonzo" value="${escapeHtml(customerName)}" class="${INPUT}">
               </div>
             </div>`,
-          footer: nextButton()
+          footer: nextButton("Next", { disabled: !canAdvance(key) })
         });
       }
 
@@ -620,13 +626,13 @@
         return shell({
           eyebrow: selectedStaffMember,
           title: `How would you rate ${selectedStaffMember}'s service?`,
-          hint: "Optional.",
+          hint: "Tap the stars to rate their service.",
           body: `
             <div class="flex flex-col items-center">
               <div class="mb-5">${employeeAvatarHtml(branchEmployees().find(e => e.name === selectedStaffMember) || { name: selectedStaffMember }, "w-20 h-20", "text-2xl")}</div>
               ${stars(staffRating, "staff")}
             </div>`,
-          footer: optionalSkip() + (staffRating ? nextButton() : "")
+          footer: nextButton("Next", { disabled: !canAdvance(key) })
         });
       }
 
@@ -939,6 +945,7 @@
       if (f === "customerComment") customerComment = e.target.value;
       if (f === "customerName") customerName = e.target.value;
       if (f === "answer") surveyAnswers[e.target.dataset.qid] = e.target.value;
+      if (f === "atmosphereOpenText" || f === "customerComment" || f === "answer") syncNextButton();
       if (f === "voucherEmail") {
         voucherEmailInput = e.target.value;
         if (voucherCard.error) { // clear the old message without re-rendering (keeps the cursor in the box)
