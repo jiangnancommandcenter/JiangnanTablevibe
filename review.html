@@ -1094,6 +1094,8 @@
           submission.staffMember = selectedStaffMember || "";
         }
         const surveyRef = await db.collection("surveys").add(submission);
+        // Low rating → email management the full survey (in the background; never blocks the customer)
+        if (avgRating !== null && avgRating <= SURVEY_ALERT_MAX_AVG) sendSurveyAlert(submission, surveyRef.id, avgRating);
         lastSummary = {
           branch: branchObj ? branchObj.name : selectedBranchId,
           branchId: selectedBranchId,
@@ -1118,6 +1120,66 @@
       } finally {
         isSubmitting = false;
       }
+    }
+
+    // ---------- Low-rating alert to management (EmailJS) ----------
+    // Average of all stars 3 or below → the full survey is emailed to management.
+    // Can use its own EmailJS service/account (js/firebase-config.js → EMAILJS_SURVEY_ALERT_*);
+    // the recipient is set in that template's "To Email" field.
+    const SURVEY_ALERT_MAX_AVG = 3;
+    const alertServiceId = () => (typeof EMAILJS_SURVEY_ALERT_SERVICE_ID !== "undefined" && EMAILJS_SURVEY_ALERT_SERVICE_ID) || EMAILJS_SERVICE_ID;
+    const alertPublicKey = () => (typeof EMAILJS_SURVEY_ALERT_PUBLIC_KEY !== "undefined" && EMAILJS_SURVEY_ALERT_PUBLIC_KEY) || EMAILJS_PUBLIC_KEY;
+    function surveyAlertEnabled() {
+      return !PREVIEW && typeof emailjs !== "undefined" && !!alertPublicKey() && !!alertServiceId()
+        && typeof EMAILJS_SURVEY_ALERT_TEMPLATE_ID !== "undefined" && !!EMAILJS_SURVEY_ALERT_TEMPLATE_ID;
+    }
+
+    function starsText(n) {
+      const v = Math.max(0, Math.min(5, Number(n) || 0));
+      return v ? `${"★".repeat(v)}${"☆".repeat(5 - v)} ${v}/5` : "Not rated";
+    }
+
+    // The whole survey as an HTML table (all text escaped) for {{{survey_html}}}
+    function surveyAlertHtml(s) {
+      const rows = [];
+      const section = title => rows.push(
+        `<tr><td colspan="2" style="padding:16px 0 6px;font-size:13px;font-weight:bold;color:#e8636f;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #eeeeee;">${escapeHtml(title)}</td></tr>`);
+      const row = (label, value) => rows.push(
+        `<tr><td valign="top" style="padding:7px 12px 7px 0;font-size:14px;color:#555555;width:45%;border-bottom:1px solid #f3f3f3;">${escapeHtml(label)}</td>`
+        + `<td valign="top" style="padding:7px 0;font-size:14px;color:#222222;border-bottom:1px solid #f3f3f3;white-space:pre-wrap;">${escapeHtml(value)}</td></tr>`);
+
+      section("Ratings");
+      activeRatings().categories.forEach(c => row(c.label, starsText(s.ratings[c.id])));
+      if (!IS_DELIVERY) {
+        section("Atmosphere");
+        row("Rating", starsText(s.atmosphereOpen && s.atmosphereOpen.rating));
+        row("What they liked", (s.atmosphereOpen && s.atmosphereOpen.comment) || "-");
+        section("Staff");
+        row("Staff member", s.staffMember || "Not specified");
+        if (s.staffMember) row("Staff service", starsText(s.ratings.staffService));
+      }
+      section("Review");
+      row("Comment", s.comment || "-");
+      row("Name", s.customerName || "Anonymous");
+      if (loadedQuestions.length) {
+        section("Other questions");
+        loadedQuestions.forEach(q => row(q.question || "", String((s.answers || {})[q.id] || "-")));
+      }
+      return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-family:Arial,Helvetica,sans-serif;">${rows.join("")}</table>`;
+    }
+
+    function sendSurveyAlert(submission, surveyId, avgRating) {
+      if (!surveyAlertEnabled()) return;
+      emailjs.send(alertServiceId(), EMAILJS_SURVEY_ALERT_TEMPLATE_ID, {
+        branch_name: submission.branchName || "",
+        survey_type: IS_DELIVERY ? "Delivery" : "Dine-in",
+        customer_name: submission.customerName || "Anonymous",
+        avg_rating: avgRating.toFixed(1),
+        submitted_at: new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }),
+        survey_id: surveyId,
+        survey_html: surveyAlertHtml(submission)
+      }, { publicKey: alertPublicKey() })
+        .catch(err => console.warn("Low-rating alert email failed:", err && (err.text || err.message || err)));
     }
 
     async function resetSurvey() {

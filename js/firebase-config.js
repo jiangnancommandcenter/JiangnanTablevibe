@@ -17,6 +17,13 @@ const EMAILJS_STORE_INVITE_SERVICE_ID = "service_ljl4e96";
 const EMAILJS_STORE_INVITE_TEMPLATE_ID = "template_pw9egup";
 // Only if that service is in a DIFFERENT EmailJS account: its Public Key (empty = same account as above)
 const EMAILJS_STORE_INVITE_PUBLIC_KEY = "";
+// Low-rating alert to management (average of all stars 3 or below): the customer's full survey.
+// Template HTML: email-templates/survey-alert-email.html. The recipient is set in that EmailJS
+// template's "To Email" field (not here). Leave the template empty to turn the alert off.
+const EMAILJS_SURVEY_ALERT_SERVICE_ID = "service_mjghnzm";
+const EMAILJS_SURVEY_ALERT_TEMPLATE_ID = "template_h8py1zf";
+// Only if that service is in a DIFFERENT EmailJS account: its Public Key (empty = same account as the voucher)
+const EMAILJS_SURVEY_ALERT_PUBLIC_KEY = "e-zsyFmOkFyMyo65_";
 
 // ---- Cloudinary (employee profile photos) ----
 // Browser uploads use an UNSIGNED upload preset. Never put the API key/secret (CLOUDINARY_URL)

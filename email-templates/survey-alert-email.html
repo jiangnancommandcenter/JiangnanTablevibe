@@ -1,0 +1,50 @@
+<!--
+  Jiang Nan low-rating alert — sent to management when a customer's average rating is 3 or below.
+  Setup in EmailJS (can be a separate account from the voucher one):
+    1. Email Services → add a service (e.g. Gmail) → copy its Service ID.
+    2. Email Templates → Create New Template → Content → "Edit Content" → Code editor → paste this file.
+    3. Settings on the same template:
+         Subject:   Low rating ({{avg_rating}}★) at {{branch_name}}
+         To Email:  the management address (it is NOT in the website code)
+    4. Copy the IDs into js/firebase-config.js:
+         EMAILJS_SURVEY_ALERT_SERVICE_ID, EMAILJS_SURVEY_ALERT_TEMPLATE_ID,
+         EMAILJS_SURVEY_ALERT_PUBLIC_KEY (only if it's a different EmailJS account: Account → General → Public Key)
+  Variables sent by review.html:
+    {{branch_name}} {{survey_type}} {{customer_name}} {{avg_rating}} {{submitted_at}} {{survey_id}}
+    {{{survey_html}}}  (THREE braces: the full survey as an HTML table; review.html escapes the text)
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f4;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#222222;">
+        <tr>
+          <td align="center" style="padding:28px 24px 4px;">
+            <img src="https://jiangnancommandcenter.github.io/JiangnanTablevibe/images/jiangnan-logo.png" alt="Jiang Nan" width="110" style="display:block;width:110px;max-width:110px;height:auto;border:0;">
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:16px 24px 0;font-size:20px;line-height:26px;font-weight:bold;">
+            Low rating: {{avg_rating}} / 5
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:6px 24px 0;font-size:14px;line-height:21px;color:#555555;">
+            {{branch_name}} · {{survey_type}} · {{submitted_at}}<br>
+            Customer: {{customer_name}}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 24px 0;">
+            {{{survey_html}}}
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:20px 24px 28px;font-size:12px;line-height:18px;color:#888888;">
+            Survey ID: {{survey_id}}<br>
+            Sent automatically by the review page when the average of all stars is 3 or below.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
