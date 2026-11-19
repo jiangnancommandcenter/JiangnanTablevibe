@@ -162,7 +162,24 @@
       .login-footer { color: rgba(255,255,255,.85) !important; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
       .login-footer .accent { color: #ffd2d8 !important; }
     }
+    /* ---------- Refresh while signed in: quiet loader instead of the sign-in artwork ---------- */
+    html.tv-resume .login-stage { background: #f3f4f6 none; justify-content: center; align-items: center; }
+    html.tv-resume .login-stage::before { display: none; }
+    html.tv-resume .login-panel { width: auto; min-height: 0; padding: 0; background: none; }
+    html.tv-resume .login-intro p,
+    html.tv-resume .login-footer { display: none; }
+    html.tv-resume .login-intro { margin-bottom: 12px; }
+    html.tv-resume #authLoading { background: none; box-shadow: none; border: 0; padding-top: 0; }
   </style>
+  <script>
+    // Signed in last time → show a quiet loader (no sign-in artwork) while Firebase restores the
+    // session. Only a display hint: the data itself is protected by sign-in + Firestore rules.
+    try { if (localStorage.getItem("tvAdminSession") === "1") document.documentElement.classList.add("tv-resume"); } catch (e) {}
+    function setAdminSessionHint(on) {
+      try { on ? localStorage.setItem("tvAdminSession", "1") : localStorage.removeItem("tvAdminSession"); } catch (e) {}
+      if (!on) document.documentElement.classList.remove("tv-resume");
+    }
+  </script>
   <script>
     // Show script failures on the login screen instead of failing silently.
     window.addEventListener("error", function (e) {
@@ -2269,6 +2286,7 @@
     // Signed in is not enough: the account also needs an admins/{uid} document
     // (the Firestore rules enforce the same thing).
     function showLoginForm() {
+      setAdminSessionHint(false); // back to the full sign-in screen with the artwork
       document.getElementById("authLoading").classList.add("hidden");
       document.getElementById("loginOverlay").classList.remove("hidden");
       document.getElementById("loginForm").classList.remove("hidden");
@@ -2276,6 +2294,7 @@
     }
 
     function showNotAdmin(user, status) {
+      setAdminSessionHint(false);
       document.getElementById("authLoading").classList.add("hidden");
       document.getElementById("loginOverlay").classList.remove("hidden");
       document.getElementById("loginForm").classList.add("hidden");
@@ -2300,6 +2319,7 @@
       }
       if (seq !== authCheckSeq) return; // user changed while we were checking
       if (status === "admin") {
+        setAdminSessionHint(true); // next refresh shows the quiet loader, not the sign-in artwork
         document.getElementById("loginOverlay").classList.add("hidden");
         subscribeToSurveySubmissions();
         subscribeToVouchers();
