@@ -67,8 +67,19 @@ function submissionTime(s) {
     return Date.now(); // just submitted; the server time hasn't arrived yet
 }
 
+// Start of the selected period in calendar days: "Last 7 days" = today + the 6 days before
+// (from midnight), so the totals match the day bars in the chart. null = all time.
+function periodStartMs() {
+    if (!selectedPeriodDays) return null;
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (selectedPeriodDays - 1));
+    return d.getTime();
+}
+
 function inPeriod(s) {
-    return !selectedPeriodDays || submissionTime(s) >= Date.now() - selectedPeriodDays * 864e5;
+    const start = periodStartMs();
+    return start === null || submissionTime(s) >= start;
 }
 
 // Branch + period scope (search is applied only where it makes sense: Suggestions & All reviews)
@@ -152,9 +163,10 @@ function emptyNote(text) {
 // Reviews over time: vertical bars (count), auto day/week/month buckets, table view underneath
 function timeBuckets(subs) {
     const now = Date.now();
-    const firstMs = subs.length ? Math.min(...subs.map(submissionTime)) : now;
-    const spanDays = selectedPeriodDays || Math.max(1, Math.ceil((now - firstMs) / 864e5));
-    const unit = spanDays <= 14 ? "day" : spanDays <= 7 * 12 ? "week" : "month";
+    // The chart covers exactly the period: from its first day (or the first review, for all time) to today
+    const fromMs = periodStartMs() ?? (subs.length ? Math.min(...subs.map(submissionTime)) : now);
+    const spanDays = selectedPeriodDays || Math.max(1, Math.ceil((now - fromMs) / 864e5) + 1);
+    const unit = spanDays <= 14 ? "day" : spanDays <= 7 * 13 ? "week" : "month";
 
     const startOf = ms => {
         const d = new Date(ms);
@@ -171,17 +183,10 @@ function timeBuckets(subs) {
         return d.getTime();
     };
 
-    const count = unit === "day" ? Math.min(spanDays, 14) : 12;
-    let start = startOf(now);
-    const starts = [start];
-    for (let i = 1; i < count; i++) {
-        const d = new Date(start);
-        if (unit === "day") d.setDate(d.getDate() - 1);
-        else if (unit === "week") d.setDate(d.getDate() - 7);
-        else d.setMonth(d.getMonth() - 1);
-        start = d.getTime();
-        starts.unshift(start);
-    }
+    // One bar per day / week / month from the period's first bucket up to the current one
+    // (no empty padding bars, and nothing older is left out for "All time")
+    const starts = [];
+    for (let st = startOf(fromMs), last = startOf(now); st <= last; st = step(st)) starts.push(st);
     return {
         unit,
         buckets: starts.map(st => {
@@ -506,7 +511,7 @@ function renderStaffTab() {
 function questionCard(q, subs) {
         const answers = subs.map(s => ({ s, a: s.answers && s.answers[q.id] }))
             .filter(x => typeof x.a === "string" && x.a.trim());
-        const sub = `${answers.length} answer${answers.length === 1 ? "" : "s"}${q.visible === false ? " · hidden from the survey" : ""}`;
+        const sub = `${answers.length} answer${answers.length === 1 ? "" : "s"}`;
         if (q.type === "multiple_choice") {
             const choices = (q.choices || []).slice();
             const counts = new Map(choices.map(c => [c, 0]));
@@ -531,11 +536,14 @@ function questionCard(q, subs) {
         return card(q.question, `Open-ended · ${sub}`, body);
 }
 
+// Only the questions currently shown on the survey (hidden or deleted ones aren't listed here;
+// their answers stay inside each review and, if open-ended, in the Suggestions tab).
 // Questions follow the Type filter: Dine-in or Delivery shows only that survey's questions;
 // "All" shows both surveys as two groups. Each question only counts answers from its own survey.
 function renderQuestionsTab() {
     const subs = reviewsInScope();
-    const qs = typeof surveyQuestions !== "undefined" ? surveyQuestions : [];
+    const allQs = typeof surveyQuestions !== "undefined" ? surveyQuestions : [];
+    const qs = allQs.filter(q => q.visible !== false);
     const groups = [
         { type: "dinein", title: "🍲 Dine-in survey", name: "dine-in" },
         { type: "delivery", title: "🛵 Delivery survey", name: "delivery" }
@@ -544,7 +552,10 @@ function renderQuestionsTab() {
 
     const shown = groups.filter(g => g.questions.length);
     if (!shown.length) {
-        const msg = selectedSurveyFilter === "delivery" ? "No delivery questions yet. Add them on the Survey Questions page (Delivery survey)."
+        const anyHidden = allQs.some(q => q.visible === false
+            && (selectedSurveyFilter === "All" || surveyTypeOf(q) === selectedSurveyFilter));
+        const msg = anyHidden ? "None of your questions are shown on the survey right now (Survey Questions page)."
+            : selectedSurveyFilter === "delivery" ? "No delivery questions yet. Add them on the Survey Questions page (Delivery survey)."
             : selectedSurveyFilter === "dinein" ? "No dine-in questions yet. Add them on the Survey Questions page (Dine-in survey)."
             : "You haven't added questions of your own yet (Survey Questions page).";
         return card("Your questions", "", emptyNote(msg));
@@ -560,17 +571,7 @@ function renderQuestionsTab() {
             : grid(cards);
     });
 
-    // Answers to questions that were deleted since
-    const known = new Set(qs.map(q => q.id));
-    const oldCount = subs.reduce((n, s) => n + Object.entries(s.answers || {})
-        .filter(([id, a]) => !known.has(id) && id !== "atmosphere_open" && typeof a === "string" && a.trim()).length, 0);
-    const older = oldCount ? `
-        <details class="bg-white border border-gray-200 rounded-[10px] px-6 py-4">
-            <summary class="cursor-pointer text-[13px] font-semibold text-gray-600 select-none">Older questions (${oldCount} answer${oldCount === 1 ? "" : "s"} to questions you've deleted)</summary>
-            <p class="text-[12px] text-gray-500 mt-2">They're kept in each review. Open-ended ones also appear in the Suggestions tab.</p>
-        </details>` : "";
-
-    return `<div class="space-y-[26px]">${sections.join("")}</div>${older ? `<div class="mt-[18px]">${older}</div>` : ""}`;
+    return `<div class="space-y-[26px]">${sections.join("")}</div>`;
 }
 
 // Full response block for one review in the All reviews tab

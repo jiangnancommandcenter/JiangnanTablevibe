@@ -283,6 +283,7 @@
     let currentKey = "branch";
     let finished = false;
     let advancing = false;
+    let advanceTimer = null;
     let isSubmitting = false;
     let lastSummary = null;
 
@@ -327,7 +328,9 @@
 
     function saveDoneState() {
       if (PREVIEW) return;
-      const stage = voucherCard.stage === "sending" ? "form" : voucherCard.stage;
+      // "sending": once the voucher exists (committed) a refresh says "on its way" (a retry would be
+      // refused); before that, the retry box is shown (nothing was created yet)
+      const stage = voucherCard.stage === "sending" ? (voucherCard.committed ? "pending" : "form") : voucherCard.stage;
       const surveyAt = (lastSummary && lastSummary.at) || Date.now();
       storageSet(DONE_KEY, JSON.stringify({
         at: surveyAt, // the 12-hour lock counts from the submission, not from later voucher updates
@@ -366,14 +369,18 @@
       return true;
     }
 
-    // stage: "none" (no email given) | "sending" | "sent" | "duplicate" | "failed"
+    // stage: "none" | "form" (retry box) | "sending" | "pending" (created, page reloaded mid-send)
+    //        | "sent" | "cooldown" | "failed" | "closed" | "skipped"
     let voucherCard = { stage: "none", email: "" };
     let voucherEmailInput = storageGet(VOUCHER_EMAIL_KEY) || "";
     customerEmail = voucherEmailInput; // prefill the survey's email box with the last one used on this phone
 
     const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/; // same shape the Firestore rules accept
+    // What the Firestore rules accept for the stored (canonical) address, e.g. "+x@gmail.com" → "@gmail.com" fails
+    const CANONICAL_EMAIL_RE = /^[a-z0-9._%-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+    const isValidEmail = e => EMAIL_RE.test(e) && CANONICAL_EMAIL_RE.test(canonicalEmail(e));
     const cleanEmail = () => customerEmail.trim().toLowerCase();
-    const emailLooksOk = () => cleanEmail() === "" || EMAIL_RE.test(cleanEmail());
+    const emailLooksOk = () => cleanEmail() === "" || isValidEmail(cleanEmail());
 
     // 8 characters, no look-alikes (0/O, 1/I/L)
     function makeVoucherCode() {
@@ -462,6 +469,9 @@
     }
 
     function back() {
+      // Cancel a pending auto-advance (e.g. tapped a star, then Back right away)
+      clearTimeout(advanceTimer);
+      advancing = false;
       const steps = getSteps();
       const i = steps.indexOf(currentKey);
       if (i > 0) transitionTo(steps[i - 1]);
@@ -471,7 +481,7 @@
     function autoAdvance(delay = AUTO_ADVANCE_MS) {
       if (advancing) return;
       advancing = true;
-      setTimeout(() => {
+      advanceTimer = setTimeout(() => {
         advancing = false;
         next();
       }, delay);
@@ -621,7 +631,7 @@
                 <label for="emailInput" class="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-1.5">Email address <span class="normal-case font-normal text-gray-400">(recommended)</span></label>
                 <input id="emailInput" data-field="customerEmail" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="you@example.com" value="${escapeHtml(customerEmail)}" class="${INPUT}">
                 <p data-email-error class="${emailLooksOk() ? "hidden" : ""} text-[12px] font-medium text-tvRed mt-1.5">Please check your email address.</p>
-                ${voucherConfigLoaded && voucherConfig.enabled
+                ${VOUCHER_ENABLED && voucherConfigLoaded && voucherConfig.enabled
                   ? `<p class="text-[12px] text-gray-500 mt-1.5">We'll email your ${voucherConfig.discountPercent}% voucher here.</p>`
                   : ""}
               </div>
@@ -680,7 +690,7 @@
       const afterEmail = {
         sending: `Sending your ${voucherConfig.discountPercent}% voucher to ${email}…`,
         sent: `Your ${voucherConfig.discountPercent}% voucher has been sent to ${email}. Show that email to staff on your next visit. Check your spam folder if you don't see it.`,
-        duplicate: `A voucher was already sent for this survey. Please check your inbox for the earlier email.`,
+        pending: `Your ${voucherConfig.discountPercent}% voucher is on its way to ${email}. Check your inbox and spam folder in a few minutes.`,
         cooldown: `${email} already received a voucher in the last 12 hours, so no new voucher was sent. Your review is saved. You can get another voucher 12 hours after your last one.`,
         failed: `Your voucher is saved, but the email didn't send. Show this screen to staff on your next visit. They can find it by your email: ${email}.`,
         closed: `Your review has been sent to Jiang Nan Hotpot management.`,
@@ -775,7 +785,7 @@
     function sendVoucherFromCard() {
       if (voucherCard.stage !== "form") return;
       const email = voucherEmailInput.trim().toLowerCase();
-      if (!EMAIL_RE.test(email)) {
+      if (!isValidEmail(email)) {
         voucherCard = { stage: "form", email, error: "Please enter a valid email address." };
         render();
         const input = document.getElementById("voucherEmailInput");
@@ -814,6 +824,13 @@
         saveDoneState();
         return render();
       }
+      // The rules only accept a voucher within 15 minutes of the survey: past that, don't try
+      // (otherwise the refusal would be shown as the 12-hour message)
+      if (lastSummary && lastSummary.at && Date.now() - lastSummary.at > VOUCHER_WINDOW_MIN * 60e3) {
+        voucherCard = { stage: "closed", email: "" };
+        saveDoneState();
+        return render();
+      }
       const now = new Date();
       const expires = voucherExpiryFrom(now, cfg);
       // Doc id = the survey id: one voucher per survey (create-only in the rules), so the same
@@ -840,11 +857,13 @@
           lastSentAt: firebase.firestore.FieldValue.serverTimestamp()
         });
         await batch.commit();
+        voucherCard.committed = true; // the voucher exists now: a refresh shows "on its way", not a retry
+        saveDoneState();
       } catch (err) {
         console.warn("Voucher not created:", err.code, err.message);
         if (err.code === "permission-denied") {
-          // the expected refusal: this email got a voucher in the last 12 hours
-          // (a survey can't send twice from this page, so that's the reason)
+          // the expected refusal: this email got a voucher in the last 12 hours (the email shape,
+          // the 15-minute window and "one voucher per survey" are all checked before this)
           voucherCard = { stage: "cooldown", email };
         } else {
           voucherCard = { stage: "form", email, error: "The voucher couldn't be created right now. Please try again." }; // nothing was created
@@ -991,9 +1010,14 @@
       }
 
       if (a === "skip-staff") {
+        // Decide from what the button said: "& submit" only when this was already the last step.
+        // If a staff pick made "staff-rate" the next step, clearing it may make this step the last:
+        // then just redraw (the button becomes "Submit Survey") instead of submitting unasked.
+        const wasLast = isLastStep(currentKey);
         selectedStaffMember = "";
         staffRating = 0;
-        return isLastStep(currentKey) ? submitFinalSurvey() : next();
+        if (wasLast) return submitFinalSurvey();
+        return isLastStep(currentKey) ? render() : next();
       }
     });
 
@@ -1033,6 +1057,17 @@
       if (e.key === "Enter" && e.target.dataset && e.target.dataset.field === "voucherEmail") {
         e.preventDefault();
         sendVoucherFromCard();
+      }
+      // Enter / the phone's "Go" key on the name or email box = Next (or Submit on the last step)
+      const f = e.target.dataset && e.target.dataset.field;
+      if (e.key === "Enter" && (f === "customerName" || f === "customerEmail") && !e.isComposing) {
+        e.preventDefault();
+        if (!canAdvance(currentKey)) {
+          const errEl = stepHost.querySelector("[data-email-error]");
+          if (errEl) errEl.classList.toggle("hidden", emailLooksOk());
+          return;
+        }
+        if (isLastStep(currentKey)) submitFinalSurvey(); else next();
       }
     });
 
@@ -1136,7 +1171,9 @@
         // Review is saved. With an email (and the offer on), the voucher is sent automatically;
         // the thank-you screen shows "Sending…" → sent / 12-hour lock / failed.
         voucherEmailInput = email;
-        const sendVoucher = !!email && VOUCHER_ENABLED && voucherConfigLoaded && voucherConfig.enabled;
+        // Not gated on the offer settings having loaded: issueVoucher() fetches them fresh
+        // (slow connections would otherwise lose the voucher) and handles "offer switched off"
+        const sendVoucher = !!email && VOUCHER_ENABLED;
         voucherCard = sendVoucher ? { stage: "sending", email } : { stage: "skipped", email: "" };
         finished = true;
         saveDoneState(); // a refresh now shows this thank-you screen, not a new survey

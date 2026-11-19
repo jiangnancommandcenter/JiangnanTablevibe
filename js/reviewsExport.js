@@ -59,7 +59,8 @@ function buildReviewsCsv(subs) {
 
     const rows = subs.map(s => {
         const at = new Date(submissionTime(s));
-        const resolvedAt = toDateOrNull(s.resolvedAt);
+        // A reopened review keeps its old resolvedAt in the database: only export it while resolved
+        const resolvedAt = s.resolved === true ? toDateOrNull(s.resolvedAt) : null;
         const atmo = s.atmosphereOpen || {};
         const atmoComment = (atmo.comment || "").trim() || answerText((s.answers || {}).atmosphere_open);
         return [

@@ -340,12 +340,30 @@ document.addEventListener("keydown", e => {
     clearResult(true);
 });
 
-// One email can have several vouchers (one per survey): show an active one first,
-// otherwise any (so staff see "already redeemed" / "expired"). One doc per query (store rules).
+// One email can have several vouchers (one per survey): show a usable one first (active and not
+// expired), then any active one (older vouchers have no expiresAt), otherwise any (so staff see
+// "already redeemed" / "expired"). One doc per query (store rules allow limit(1) only).
+let expiryIndexMissing = false; // the first query needs a composite index (see firestore.indexes.json)
 async function findVoucherByEmail(rawEmail) {
     const vouchersRef = db.collection("vouchers");
     // Older vouchers were stored with the address exactly as typed (lowercased)
     const emails = [...new Set([canonicalEmail(rawEmail), rawEmail])];
+    if (!expiryIndexMissing) {
+        const now = firebase.firestore.Timestamp.now();
+        for (const email of emails) {
+            try {
+                const usable = await vouchersRef.where("email", "==", email).where("status", "==", "active")
+                    .where("expiresAt", ">", now).limit(1).get();
+                if (!usable.empty) return usable.docs[0];
+            } catch (err) {
+                if (err.code !== "failed-precondition") throw err;
+                // Index not created yet: the link to create it is in this error (browser console, F12)
+                console.warn("Voucher lookup by email needs a Firestore index. Open this link to create it:", err.message);
+                expiryIndexMissing = true;
+                break;
+            }
+        }
+    }
     for (const email of emails) {
         const active = await vouchersRef.where("email", "==", email).where("status", "==", "active").limit(1).get();
         if (!active.empty) return active.docs[0];
@@ -413,20 +431,23 @@ async function redeem() {
             redeemedBy: auth.currentUser.uid,
             redeemedBranchId: store.branchId
         });
+        // Staff may have cleared the screen (Escape) while this was saving: don't bring the card back
+        if (!result || !result.voucher || result.voucher.id !== v.id) return;
         result = { voucher: { ...v, status: "redeemed", redeemedBranchId: store.branchId, redeemedAt: null }, redeemed: true };
         clearTimeout(successTimer);
         successTimer = setTimeout(() => clearResult(true), SUCCESS_CLEAR_MS);
     } catch (err) {
         console.error("Redeem failed:", err);
-        result.busy = false;
-        result.confirming = false;
         showToast(err.code === "permission-denied"
             ? "Can't redeem: this voucher was already used or has expired."
             : "Couldn't redeem. Check the internet connection and try again.");
+        if (!result || !result.voucher || result.voucher.id !== v.id) return; // screen was cleared meanwhile
+        result.busy = false;
+        result.confirming = false;
         // Reload it so the card shows the real status
         try {
             const snap = await db.collection("vouchers").doc(v.id).get();
-            if (snap.exists && result && result.voucher) result.voucher = { id: snap.id, ...snap.data() };
+            if (snap.exists && result && result.voucher && result.voucher.id === v.id) result.voucher = { id: snap.id, ...snap.data() };
         } catch { /* keep what we have */ }
     }
     render();

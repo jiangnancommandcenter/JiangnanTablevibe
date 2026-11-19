@@ -249,7 +249,9 @@ service cloud.firestore {
         // and its rules refuse it if the email got a voucher less than 12 hours ago
         && getAfter(/databases/$(database)/documents/voucherEmailLocks/$(request.resource.data.email)).data.surveyId == voucherId
         && getAfter(/databases/$(database)/documents/voucherEmailLocks/$(request.resource.data.email)).data.lastSentAt == request.time
-        && request.resource.data.code is string && request.resource.data.code.size() == 8
+        // same alphabet as makeVoucherCode() in review.html (no lowercase / look-alikes the kiosk can't find)
+        && request.resource.data.code is string
+        && request.resource.data.code.matches('^[ABCDEFGHJKMNPQRSTUVWXYZ2-9]{8}$')
         && matchesVoucherOffer(request.resource.data, voucherCfg())
         && request.resource.data.status == 'active'
         && request.resource.data.createdAt == request.time
@@ -257,7 +259,9 @@ service cloud.firestore {
         && request.resource.data.surveyId is string
         && exists(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId))
         && get(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId)).data.createdAt
-             > request.time - duration.value(15, 'm');
+             > request.time - duration.value(15, 'm')
+        // the voucher belongs to the branch the survey was for
+        && request.resource.data.branchId == get(/databases/$(database)/documents/surveys/$(request.resource.data.surveyId)).data.branchId;
       // Staff redeem once, before the voucher's expiry; the customer can never change it.
       // Admins redeem at any branch; a store account only at its own branch.
       // Older vouchers have no expiresAt: they were valid for 1 calendar month (32 days covers it).
@@ -286,6 +290,9 @@ service cloud.firestore {
         return request.resource.data.keys().hasOnly(['surveyId', 'lastSentAt'])
           && request.resource.data.lastSentAt == request.time
           && request.resource.data.surveyId is string
+          // only together with a brand-new voucher for this email (written in the same batch):
+          // the voucher must not exist before this write, so nobody can lock an email on its own
+          && !exists(/databases/$(database)/documents/vouchers/$(request.resource.data.surveyId))
           && getAfter(/databases/$(database)/documents/vouchers/$(request.resource.data.surveyId)).data.email == emailId;
       }
       allow read: if isAdmin();

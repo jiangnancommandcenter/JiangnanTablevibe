@@ -122,8 +122,11 @@ function renderVouchers() {
 }
 
 // Find by voucher code (8 characters) or by the customer's email (all their vouchers)
+let findSeq = 0; // only the latest search may show its results (a slow earlier one is ignored)
 async function findVoucher(rawInput) {
     const input = String(rawInput || "").trim();
+    const seq = ++findSeq;
+    let found = null;
     try {
         if (input.includes("@")) {
             // One email can have several vouchers (one per survey). Older vouchers were
@@ -132,7 +135,7 @@ async function findVoucher(rawInput) {
             const snaps = await Promise.all(emails.map(e => db.collection("vouchers").where("email", "==", e).get()));
             const byId = new Map();
             snaps.forEach(s => s.docs.forEach(doc => byId.set(doc.id, { id: doc.id, ...doc.data() })));
-            lookedUpVouchers = [...byId.values()].sort((a, b) =>
+            found = [...byId.values()].sort((a, b) =>
                 ((b.createdAt && b.createdAt.toMillis && b.createdAt.toMillis()) || 0) -
                 ((a.createdAt && a.createdAt.toMillis && a.createdAt.toMillis()) || 0));
         } else {
@@ -142,13 +145,18 @@ async function findVoucher(rawInput) {
                 return;
             }
             const snap = await db.collection("vouchers").where("code", "==", code).get();
-            lookedUpVouchers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            found = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         }
     } catch (error) {
+        if (seq !== findSeq) return;
         console.error("Error finding voucher:", error);
         showToast("Couldn't search vouchers. Are the new Firestore rules published?");
         lookedUpVouchers = null;
+        renderVouchers();
+        return;
     }
+    if (seq !== findSeq) return; // a newer search was started meanwhile
+    lookedUpVouchers = found;
     renderVouchers();
 }
 
@@ -187,6 +195,14 @@ async function redeemVoucher(id, btn) {
             redeemedBranchId: branchId
         });
         showToast(`Voucher ${v.code} redeemed — apply ${voucherDeal(v).pct}% off ${voucherDeal(v).applies}.`);
+        // Show it as redeemed right away in the Find results (older vouchers aren't in the live
+        // "latest 50" list, so nothing else would refresh them)
+        if (lookedUpVouchers) {
+            lookedUpVouchers = lookedUpVouchers.map(x => x.id === id
+                ? { ...x, status: "redeemed", redeemedBranchId: branchId, redeemedAt: firebase.firestore.Timestamp.now() }
+                : x);
+            renderVouchers();
+        }
     } catch (error) {
         console.error("Error redeeming voucher:", error);
         showToast(error.code === "permission-denied"

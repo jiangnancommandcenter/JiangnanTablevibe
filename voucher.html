@@ -84,7 +84,7 @@
 
       // Conditions as they were when the voucher was sent (repeated ?k= params); older links have none
       var conditions = q.getAll("k").map(function (s) { return s.trim().slice(0, 200); })
-        .filter(function (s) { return s; }).slice(0, 11);
+        .filter(function (s) { return s; }).slice(0, 12); // validity + min spend + up to 10 conditions
       if (conditions.length) {
         var list = document.getElementById("conditionsList");
         conditions.forEach(function (line) {

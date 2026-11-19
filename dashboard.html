@@ -1477,11 +1477,12 @@
     });
 
     document.getElementById("deleteBranchCopyBtn").addEventListener("click", async e => {
+      const btn = e.currentTarget; // null after the await, so keep it now
       const b = deleteBranchTarget();
       if (!b) return;
       try {
         await navigator.clipboard.writeText(b.name);
-        e.currentTarget.textContent = "Copied";
+        btn.textContent = "Copied";
       } catch {
         // Clipboard blocked: select the name so Ctrl+C works
         const sel = window.getSelection();
@@ -2327,6 +2328,15 @@
         updateKPIs();
         renderDashboardBranches();
         renderReviewsFeed();
+        // Don't leave customer data in the page behind the login screen
+        if (typeof renderVouchers === "function") renderVouchers();
+        if (typeof renderStoreAccounts === "function") renderStoreAccounts();
+        if (typeof REVIEW_TABS !== "undefined") {
+          REVIEW_TABS.filter(t => t.id !== "all").forEach(t => {
+            const panel = document.getElementById("rtab-" + t.id);
+            if (panel) panel.innerHTML = "";
+          });
+        }
       }
     });
 
@@ -2340,7 +2350,10 @@
       btn.textContent = "Check again";
     });
 
-    document.getElementById("notAdminSignOutBtn").addEventListener("click", () => auth.signOut());
+    document.getElementById("notAdminSignOutBtn").addEventListener("click", async () => {
+      await auth.signOut();
+      resetCaptcha(); // a fresh "I'm not a robot" check for the next sign-in, like the sidebar Sign out
+    });
 
     document.getElementById("copyUidBtn").addEventListener("click", async () => {
       const input = document.getElementById("notAdminUid");
